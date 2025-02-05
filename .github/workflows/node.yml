@@ -32,10 +32,14 @@ jobs:
       env:
         # CI causes Eslint warning to be treated as errors, meh
         CI: false
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v4
+    # - name: Upload build artifact
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: xgithub-pagesx
+    #     path: build
+    - name: Upload pages artifact
+      uses: actions/upload-pages-artifact@v3
       with:
-        name: xgithub-pagesx
         path: build
 
   # Check if this is 'main' branch
