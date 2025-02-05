@@ -3,7 +3,7 @@
   padding: 8px;
 }
 
-.molstar-viewer {
+.ViewerWindow {
   position: relative;
   margin-top: 16px;
   margin-left: 16px;
@@ -12,7 +12,7 @@
   padding: 8px;
 }
 
-.controls {
+.ControlsWindow {
   position: relative;
   margin-top: 16px;
   margin-left: 16px;
@@ -20,4 +20,8 @@
   min-height: 280px;
   padding: 8px;
   border: 1px solid #ccc;
+}
+
+.Description {
+  margin-left: 8px;
 }

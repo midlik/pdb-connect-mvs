@@ -3,6 +3,7 @@ import * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol';
 import { Color } from 'molstar/lib/mol-util/color';
 import { cycleIterator, ENTITY_COLORS, LIGAND_COLORS } from './colors';
+import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/saccharides';
 import { ApiDataProvider, EntityRecord, IDataProvider, ModifiedResidueRecord } from './data-provider';
 
 
@@ -125,6 +126,7 @@ export class MVSSnapshotProvider {
     private async loadEntity(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['entity']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId;
+        // Find out which assembly contains this entity and select where to render (priority: preferred assembly > any assembly > deposited model)
         const entitiesInAssemblies = await this.dataProvider.entitiesInAssemblies(params.entry);
         const inAssemblies = entitiesInAssemblies[params.entityId]?.assemblies ?? [];
         const theAssembly = (preferredAssembly !== undefined && inAssemblies.includes(preferredAssembly))
@@ -135,17 +137,21 @@ export class MVSSnapshotProvider {
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const reprs = applyStandardReprs(struct, { modifiedResidues });
+        const reprs = applyStandardReprs(struct, { modifiedResidues, opacityFactor: 0.3 }); // TODO compute smart opacity from structure size, like in PDBImages
+
+        for (const repr of Object.values(reprs)) {
+            repr.color({ color: 'gray' });
+        }
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
-        for (const repr of Object.values(reprs)) {
-            repr.color({ color: 'gray' }).opacity({ opacity: 0.3 }); // TODO compute smart opacity from structure size, like in PDBImages
+        const entityType = decideEntityType(entities[params.entityId]);
+        const entityComponent = struct.component({ selector: { label_entity_id: params.entityId } });
+        const entityReprs = StandardRepresentations[entityType]?.(entityComponent, {}) ?? {};
+        // .representation({ type: entityType === 'polymer' ? 'cartoon' : 'ball_and_stick' }) // TODO treat each entity type appropriately
+        for (const repr of Object.values(entityReprs)) {
+            repr.color({ color: Color.toHexStyle(entityColors[params.entityId]) as any });
         }
-        struct
-            .component({ selector: { label_entity_id: params.entityId } })
-            .representation({ type: 'ball_and_stick' })
-            .color({ color: Color.toHexStyle(entityColors[params.entityId]) as any });
         // TODO decide repr type based on entity type
 
         outDescription.push(`## Entity ${params.entityId}`);
@@ -158,23 +164,110 @@ export class MVSSnapshotProvider {
     }
 }
 
-function applyStandardReprs(struct: Builder.Structure, options: { modifiedResidues: ModifiedResidueRecord[], faded?: boolean }) {
-    const polymerCartoon = struct.component({ selector: 'polymer' }).representation({ type: 'cartoon' });
-    const ligandSticks = struct.component({ selector: 'ligand' }).representation({ type: 'ball_and_stick' });
-    const ionSticks = struct.component({ selector: 'ion' }).representation({ type: 'ball_and_stick' });
-    const nonstandardSticks = struct.component({ selector: options.modifiedResidues.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) }).representation({ type: 'ball_and_stick' });
-    // These nonstandard residues will only contain info from API, TODO is it enough?
-    const sugar = struct.component({ selector: 'branched' });
-    const sugarSticks = sugar.representation({ type: 'ball_and_stick' });
-    const sugarSnfg = sugar.representation({ type: 'surface' }); // TODO add SNFG to MVS
-    // const sugarLinkageSticks = await this.nodes.branchedLinkage?.makeBallsAndSticks(options, ['branchedLinkageSticks']); // TODO select sugar linkage somehow if we want it
 
-    const reprs = { polymerCartoon, ligandSticks, ionSticks, nonstandardSticks, sugarSticks, sugarSnfg };
-    if (options.faded) {
-        for (const repr of Object.values(reprs)) repr.opacity({ opacity: 1 });
-    } else {
-        reprs.sugarSticks.opacity({ opacity: 0.8 });
-        reprs.sugarSnfg.opacity({ opacity: 0.5 });
+type StandardComponentType = 'polymer' | 'branched' | 'branchedLinkage' | 'ligand' | 'ion' | 'nonstandard' | 'water';
+type LigEnvComponentType = 'ligand' | 'environment' | 'wideEnvironment' | 'linkage';
+type StandardVisualType = 'polymerCartoon' | 'branchedCarbohydrate' | 'branchedSticks' | 'branchedLinkageSticks' | 'ligandSticks' | 'ionSticks' | 'nonstandardSticks' | 'waterSticks';
+type LigEnvVisualType = 'ligandSticks' | 'environmentSticks' | 'linkageSticks' | 'wideEnvironmentCartoon';
+
+
+
+function decideEntityType(entityInfo: EntityRecord): StandardComponentType {
+    if (entityInfo.type === 'water') {
+        return 'water';
+    }
+    if (entityInfo.type === 'bound') {
+        if (entityInfo.compIds.length === 1 && SaccharideNames.has(entityInfo.compIds[0])) {
+            // TODO should we treat lipids in a special way? src/mol-model/structure/model/types/lipids.ts
+            return 'branched';
+        } else {
+            return 'ligand';
+        }
+    }
+    if (entityInfo.type === 'carbohydrate polymer') { // TODO check what values `type` can have
+        return 'branched';
+    }
+    // TODO all types
+    return 'polymer';
+}
+
+interface StandardComponentsOptions {
+    modifiedResidues: ModifiedResidueRecord[],
+}
+
+const StardardComponents: { [type in StandardComponentType]?: (struct: Builder.Structure, options: StandardComponentsOptions) => Builder.Component } = {
+    polymer(structure: Builder.Structure) {
+        return structure.component({ selector: 'polymer' });
+    },
+    branched(structure: Builder.Structure) {
+        return structure.component({ selector: 'branched' });
+    },
+    branchedLinkage: undefined, // TODO select sugar linkage somehow if we want it (const sugarLinkageSticks = await this.nodes.branchedLinkage?.makeBallsAndSticks(options, ['branchedLinkageSticks']);)
+    ligand(structure: Builder.Structure) {
+        return structure.component({ selector: 'ligand' });
+    },
+    ion(structure: Builder.Structure) {
+        return structure.component({ selector: 'ion' });
+    },
+    nonstandard(structure: Builder.Structure, options: StandardComponentsOptions) {
+        return structure.component({ selector: options.modifiedResidues.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) });
+    },
+};
+
+interface StandardRepresentationsOptions {
+    opacityFactor?: number,
+}
+
+const StandardRepresentations: { [type in StandardComponentType]?: (comp: Builder.Component, options: StandardRepresentationsOptions) => { [repr in StandardVisualType]?: Builder.Representation } } = {
+    polymer(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            polymerCartoon: applyOpacity(component.representation({ type: 'cartoon' }), options.opacityFactor),
+        };
+    },
+    branched(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            branchedCarbohydrate: applyOpacity(component.representation({ type: 'surface' }), 0.5 * (options.opacityFactor ?? 1)), // TODO add SNFG to MVS
+            branchedSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), 0.8 * (options.opacityFactor ?? 1)),
+        };
+    },
+    branchedLinkage(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            branchedLinkageSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+        };
+    },
+    ligand(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            ligandSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+        };
+    },
+    ion(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            ionSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+        };
+    },
+    nonstandard(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            nonstandardSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+        };
+    },
+    water(component: Builder.Component, options: StandardRepresentationsOptions) {
+        return {
+            waterSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+        };
+    },
+};
+
+
+function applyStandardReprs(struct: Builder.Structure, options: { modifiedResidues: ModifiedResidueRecord[], opacityFactor?: number }) {
+    const reprs: { [repr in StandardVisualType]?: Builder.Representation } = {};
+    let comp: StandardComponentType;
+    for (comp in StardardComponents) {
+        const component = StardardComponents[comp]?.(struct, options);
+        if (!component) continue;
+        const representations = StandardRepresentations[comp]?.(component, options);
+        for (const rep in representations) {
+            reprs[rep as StandardVisualType] = representations[rep as keyof typeof representations];
+        }
     }
     return reprs;
 }
@@ -186,6 +279,11 @@ function applyEntityColors(repr: Builder.Representation, colors: { [entityId: st
             color: Color.toHexStyle(colors[entityId]) as any,
         });
     }
+}
+
+function applyOpacity(repr: Builder.Representation, opacity: number | undefined) {
+    if (opacity !== undefined && opacity !== 1) return repr.opacity({ opacity });
+    else return repr;
 }
 
 function getEntityColors(entities: { [entityId: string]: EntityRecord }): { [entityId: string]: Color } {

@@ -3,8 +3,6 @@ import TabPanel from '@mui/lab/TabPanel';
 import Button from '@mui/material/Button';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
-import { type Viewer } from 'molstar/lib/apps/viewer';
-import { type MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 import React, { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { BehaviorSubject } from 'rxjs';
@@ -17,6 +15,11 @@ const Molstar: Molstar = (window as any).molstar;
 if (!Molstar) {
     throw new Error('window.molstar not defined, include it with <script type="text/javascript" src="https://molstar.org/viewer/molstar.js"></script>');
 }
+
+type Viewer = InstanceType<Molstar['Viewer']>;
+type MVSData = ReturnType<Molstar['PluginExtensions']['mvs']['MVSData']['fromMVSJ']>;
+// import { type Viewer } from 'molstar/lib/apps/viewer';
+// import { type MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 
 
 function App() {
@@ -84,7 +87,7 @@ function ViewerWindow({ model }: { model: AppModel }) {
             viewerPromise.then(viewer => viewer.dispose());
         };
     }, [model]);
-    return <div ref={target} className='molstar-viewer'></div>;
+    return <div ref={target} className='ViewerWindow'></div>;
 }
 
 function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }) {
@@ -96,13 +99,13 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
 
     const [tab, setTab] = React.useState(kinds[0]);
 
-    return <div className='controls'>
+    return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
         <TabContext value={tab} >
             <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-                {kinds.map(kind => <Tab label={kind} value={kind} key={kind} />)}
+                {kinds.map(kind => <Tab label={kind} value={kind} key={kind} style={{ padding: 2 }} />)}
             </Tabs>
-            {kinds.map(kind => <TabPanel value={kind} style={{ padding: 12 }} key={kind}>
+            {kinds.map(kind => <TabPanel value={kind} style={{ paddingBlock: 16, paddingInline: 4 }} key={kind}>
                 <ViewButtons model={model} snapshots={snapshots.filter(s => s.kind === tab)} />
             </TabPanel>)}
         </TabContext>
@@ -122,11 +125,10 @@ function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: Snapsho
         return () => sub.unsubscribe();
     }, [model]);
 
-    return <div>
+    return <div className='ViewButtons'>
         {snapshots.map(s =>
             <Button key={s.name} variant={s.name === snapshotName ? 'contained' : 'outlined'} style={{ margin: 2 }}
-                disabled={busy}
-                onClick={() => model.loadSnapshot(s)}>
+                disabled={busy} onClick={() => model.loadSnapshot(s)}>
                 {s.name}
             </Button>
         )}
@@ -140,7 +142,8 @@ function Description({ model }: { model: AppModel }) {
         return () => sub.unsubscribe();
     }, [model]);
 
-    return <div>
+    return <div className='Description'>
         {snapshot && <Markdown>{snapshot.metadata.description}</Markdown>}
-    </div >;
+        {!snapshot && <i style={{ color: 'gray' }}>No view selected.</i>}
+    </div>;
 }
