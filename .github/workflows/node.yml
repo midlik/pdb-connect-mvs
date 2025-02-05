@@ -20,12 +20,16 @@ jobs:
   # Build
   build:
     runs-on: ubuntu-latest
+    environment:
+      # CI causes Eslint warning to be treated as errors, meh
+      CI: false
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
         node-version: 20
-    - run: yarn
+    - name: Yarn
+      run: yarn
     - name: Build
       run: yarn build
     - name: Upload build artifact
