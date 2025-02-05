@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       # CI causes Eslint warning to be treated as errors, meh
-      CI: false
+      CI: "false"
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
