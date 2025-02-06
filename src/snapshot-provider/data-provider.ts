@@ -30,8 +30,6 @@ export class ApiDataProvider implements IDataProvider {
 
     async assemblies(entryId: string): Promise<AssemblyRecord[]> {
         const url = `${this.apiBaseUrl}/pdb/entry/summary/${entryId}`;
-        console.log('base', this.apiBaseUrl)
-        console.log('url', url)
         const json = await this.get(url);
         const assemblies: AssemblyRecord[] = [];
         for (const record of json[entryId] ?? []) {
@@ -54,7 +52,6 @@ export class ApiDataProvider implements IDataProvider {
         const json = await this.get(url);
         const result: { [entityId: number]: EntityRecord } = {};
         for (const record of json[pdbId] ?? []) {
-            console.log('record', record)
             result[record.entity_id] = {
                 names: record.molecule_name ?? [],
                 type: record.molecule_type,
@@ -71,7 +68,7 @@ export class ApiDataProvider implements IDataProvider {
         const result: ModifiedResidueRecord[] = [];
         for (const record of json[pdbId] ?? []) {
             result.push({
-                entityId: record.entity_id,
+                entityId: `${record.entity_id}`, // API serves as number, we need string
                 labelAsymId: record.struct_asym_id,
                 authAsymId: record.chain_id,
                 labelSeqId: record.residue_number,
@@ -120,7 +117,7 @@ export interface EntityRecord {
 
 /** Represents one instance of a modified residue. */
 export interface ModifiedResidueRecord {
-    entityId: number,
+    entityId: string,
     labelAsymId: string,
     authAsymId: string,
     labelSeqId: number,

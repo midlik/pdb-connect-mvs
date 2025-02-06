@@ -1,8 +1,8 @@
 import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
-import * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
+import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ApiDataProvider, IDataProvider } from './data-provider';
-import { applyEntityColors, applyStandardReprs, decideEntityType, getEntityColors, StandardRepresentations } from './helpers';
+import { applyEntityColors, applyStandardComponents, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getEntityColors } from './helpers';
 
 
 type SnapshotSpecParams = {
@@ -55,7 +55,7 @@ export class MVSSnapshotProvider {
     private async listAllSnapshots(entryId: string): Promise<SnapshotSpec[]> {
         const out: SnapshotSpec[] = [];
         for (const k of this.listSnapshotKinds()) {
-            out.push(... await this.listSnapshots(entryId, k));
+            out.push(...await this.listSnapshots(entryId, k));
         }
         return out;
     }
@@ -89,11 +89,12 @@ export class MVSSnapshotProvider {
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const reprs = applyStandardReprs(struct, { modifiedResidues });
+        const components = applyStandardComponents(struct, { modifiedResidues });
+        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
-        for (const repr of Object.values(reprs)) {
+        for (const repr of Object.values(representations)) {
             applyEntityColors(repr, entityColors);
         }
 
@@ -108,11 +109,12 @@ export class MVSSnapshotProvider {
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const reprs = applyStandardReprs(struct, { modifiedResidues });
+        const components = applyStandardComponents(struct, { modifiedResidues });
+        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
-        for (const repr of Object.values(reprs)) {
+        for (const repr of Object.values(representations)) {
             applyEntityColors(repr, entityColors);
         }
 
@@ -135,37 +137,39 @@ export class MVSSnapshotProvider {
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const reprs = applyStandardReprs(struct, { modifiedResidues, opacityFactor: 0.3 }); // TODO compute smart opacity from structure size, like in PDBImages
+        const components = applyStandardComponents(struct, { modifiedResidues });
+        const representations = applyStandardRepresentations(components, { opacityFactor: 0.3 }); // TODO compute smart opacity from structure size, like in PDBImages
 
-        for (const repr of Object.values(reprs)) {
+        for (const repr of Object.values(representations)) {
             repr.color({ color: 'gray' });
         }
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
         const entityType = decideEntityType(entities[params.entityId]);
-        const entityComponent = struct.component({ selector: { label_entity_id: params.entityId } });
-        const entityReprs = StandardRepresentations[entityType]?.(entityComponent, {}) ?? {};
-        for (const repr of Object.values(entityReprs)) {
+
+        const entityComponents = applyStandardComponentsForEntity(struct, params.entityId, entityType, { modifiedResidues });
+        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1 });
+        for (const repr of Object.values(entityRepresentations)) {
             repr.color({ color: Color.toHexStyle(entityColors[params.entityId]) as any });
         }
 
         outDescription.push(`## Entity ${params.entityId}`);
         const entityName = entities[params.entityId].names[0];
         outDescription.push((entityName ? `__${entityName}__` : '*Entity name not available*') + ` (${entityType})`);
-        const src = theAssembly === preferredAssembly
-            ? `assembly ${theAssembly} (preferred)`
-            : theAssembly !== undefined
-                ? `assembly ${theAssembly} (entity not present in the preferred assembly ${preferredAssembly})`
-                : 'the deposited model (entity not present in any assembly)';
-        outDescription.push(`Showing in ${src}.`);
+        if (theAssembly === preferredAssembly) {
+            outDescription.push(`Showing in assembly ${theAssembly} (preferred).`);
+        } else if (theAssembly !== undefined) {
+            outDescription.push(`Showing in assembly ${theAssembly} (entity not present in the preferred assembly ${preferredAssembly}).`);
+        } else {
+            outDescription.push(`Showing in the deposited model (entity not present in any assembly).`);
+        }
     }
 }
 
 
 /** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
 export function getDefaultMVSSnapshotProvider(): MVSSnapshotProvider {
-    console.log('getDefaultMVSSnapshotProvider')
     const dataProvider = new ApiDataProvider('https://www.ebi.ac.uk/pdbe/api/');
     return new MVSSnapshotProvider(dataProvider);
 }
@@ -193,5 +197,42 @@ New states:
 
 More ideas:
 - Custom highlight granularity in Molstar (to pick e.g. domains)
+
+Questions:
+- We still don't have nstd_flag=. residues in modres API (e.g. 1gkt)
+  - Currently showing them as ligand in whole-struct visual, not showing them in entity visual
+  - If we want them in entity visual, we need at least one of:
+    - have them in API
+    - run a structure query in MVS producer
+    - support MolQL in MVS
+    - support nested components in MVS
+    - support simplified query algebra in MVS
+
+
+-------------------------------------------------------
+
+Components and representations:
+
+Whole entry/assembly:
+- polymer: polymerCartoon
+- branched: branchedCarbohydrate, branchedSticks (includes linking residue; _entity.type=branched + list of selected CCDs)
+- branchedLinkage: branchedLinkageSticks (only needed if we do not show branchedSticks)
+- ligand: ligandSticks (includes linking residue; includes nstd_flag=.)
+- ion: ionSticks (includes linking residue)
+- nonstandard: nonstandardSticks (based on API data, only nstd_flag=n)
+- water: waterSticks
+
+Entity:
+* case type 'polymer':
+    - polymer: polymerCartoon
+    - nonstandard: nonstandardSticks
+* case type 'branched':
+    - branched: branchedCarbohydrate, branchedSticks (wo linking residue; includes API "molecule_type": "carbohydrate polymer" + list of selected CCDs)
+* case type 'ligand':
+    - ligand: ligandSticks (wo linking residue)
+* case type 'ion':
+    - ion: ionSticks (wo linking residue)
+* case type 'water':
+    - water: waterSticks
 
 */

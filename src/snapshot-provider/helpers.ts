@@ -8,38 +8,19 @@ import { cycleIterator, ENTITY_COLORS, LIGAND_COLORS } from './colors';
 import { EntityRecord, ModifiedResidueRecord } from './data-provider';
 
 
+export type EntityType = 'polymer' | 'branched' | 'ligand' | 'ion' | 'water';
 
 export type StandardComponentType = 'polymer' | 'branched' | 'branchedLinkage' | 'ligand' | 'ion' | 'nonstandard' | 'water';
+export type StandardRepresentationType = 'polymerCartoon' | 'branchedCarbohydrate' | 'branchedSticks' | 'branchedLinkageSticks' | 'ligandSticks' | 'ionSticks' | 'nonstandardSticks' | 'waterSticks';
+
 export type LigEnvComponentType = 'ligand' | 'environment' | 'wideEnvironment' | 'linkage';
-export type StandardVisualType = 'polymerCartoon' | 'branchedCarbohydrate' | 'branchedSticks' | 'branchedLinkageSticks' | 'ligandSticks' | 'ionSticks' | 'nonstandardSticks' | 'waterSticks';
-export type LigEnvVisualType = 'ligandSticks' | 'environmentSticks' | 'linkageSticks' | 'wideEnvironmentCartoon';
-
-
-
-export function decideEntityType(entityInfo: EntityRecord): StandardComponentType {
-    if (entityInfo.type === 'water') {
-        return 'water';
-    }
-    if (entityInfo.type === 'bound') {
-        if (entityInfo.compIds.length === 1 && SaccharideNames.has(entityInfo.compIds[0])) {
-            // TODO should we treat lipids in a special way? src/mol-model/structure/model/types/lipids.ts
-            return 'branched';
-        } else if (entityInfo.compIds.length === 1 && IonNames.has(entityInfo.compIds[0])) {
-            return 'ion';
-        } else {
-            return 'ligand';
-        }
-    }
-    if (entityInfo.type === 'carbohydrate polymer') { // TODO check what values `type` can have
-        return 'branched';
-    }
-    // TODO all types
-    return 'polymer';
-}
+export type LigEnvRepresentationType = 'ligandSticks' | 'environmentSticks' | 'linkageSticks' | 'wideEnvironmentCartoon';
 
 export interface StandardComponentsOptions {
     modifiedResidues: ModifiedResidueRecord[],
 }
+
+export type StandardComponentCollection = { [type in StandardComponentType]?: Builder.Component };
 
 export const StardardComponents: { [type in StandardComponentType]?: (struct: Builder.Structure, options: StandardComponentsOptions) => Builder.Component } = {
     polymer(structure: Builder.Structure) {
@@ -64,7 +45,9 @@ export interface StandardRepresentationsOptions {
     opacityFactor?: number,
 }
 
-export const StandardRepresentations: { [type in StandardComponentType]?: (comp: Builder.Component, options: StandardRepresentationsOptions) => { [repr in StandardVisualType]?: Builder.Representation } } = {
+export type StandardRepresentationCollection = { [type in StandardRepresentationType]?: Builder.Representation };
+
+export const StandardRepresentations: { [type in StandardComponentType]?: (comp: Builder.Component, options: StandardRepresentationsOptions) => { [repr in StandardRepresentationType]?: Builder.Representation } } = {
     polymer(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
             polymerCartoon: applyOpacity(component.representation({ type: 'cartoon' }), options.opacityFactor),
@@ -104,18 +87,43 @@ export const StandardRepresentations: { [type in StandardComponentType]?: (comp:
 };
 
 
-export function applyStandardReprs(struct: Builder.Structure, options: { modifiedResidues: ModifiedResidueRecord[], opacityFactor?: number }) {
-    const reprs: { [repr in StandardVisualType]?: Builder.Representation } = {};
-    let comp: StandardComponentType;
-    for (comp in StardardComponents) {
-        const component = StardardComponents[comp]?.(struct, options);
+export function applyStandardComponents(struct: Builder.Structure, options: StandardComponentsOptions): StandardComponentCollection {
+    const out: StandardComponentCollection = {};
+    let compType: StandardComponentType;
+    for (compType in StardardComponents) {
+        const component = StardardComponents[compType]?.(struct, options);
+        if (component) out[compType] = component;
+    }
+    return out;
+}
+
+export function applyStandardComponentsForEntity(struct: Builder.Structure, entityId: string, entityType: EntityType, options: StandardComponentsOptions): StandardComponentCollection {
+    if (entityType === 'polymer') {
+        return {
+            polymer: struct.component({ selector: { label_entity_id: entityId } }),
+            nonstandard: struct.component({ selector: options.modifiedResidues.filter(r => r.entityId === entityId).map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) }),
+        };
+    } else {
+        return {
+            [entityType]: struct.component({ selector: { label_entity_id: entityId } }),
+        };
+    }
+}
+
+export function applyStandardRepresentations(components: StandardComponentCollection, options: StandardRepresentationsOptions): StandardRepresentationCollection {
+    const out: StandardRepresentationCollection = {};
+    let compType: StandardComponentType;
+    let reprType: StandardRepresentationType;
+    for (compType in components) {
+        const component = components[compType];
         if (!component) continue;
-        const representations = StandardRepresentations[comp]?.(component, options);
-        for (const rep in representations) {
-            reprs[rep as StandardVisualType] = representations[rep as keyof typeof representations];
+        const representations = StandardRepresentations[compType]?.(component, options);
+        if (!representations) continue;
+        for (reprType in representations) {
+            out[reprType] = representations[reprType];
         }
     }
-    return reprs;
+    return out;
 }
 
 export function applyEntityColors(repr: Builder.Representation, colors: { [entityId: string]: Color }) {
@@ -147,5 +155,22 @@ export function getEntityColors(entities: { [entityId: string]: EntityRecord }):
     return out;
 }
 
-
-
+export function decideEntityType(entityInfo: EntityRecord): EntityType {
+    if (entityInfo.type === 'water') {
+        return 'water';
+    }
+    if (entityInfo.type === 'bound') {
+        if (entityInfo.compIds.length === 1 && SaccharideNames.has(entityInfo.compIds[0])) {
+            // TODO should we treat lipids in a special way? src/mol-model/structure/model/types/lipids.ts
+            return 'branched';
+        } else if (entityInfo.compIds.length === 1 && IonNames.has(entityInfo.compIds[0])) {
+            return 'ion';
+        } else {
+            return 'ligand';
+        }
+    }
+    if (entityInfo.type === 'carbohydrate polymer') { // TODO check what values `type` can have
+        return 'branched';
+    }
+    return 'polymer';
+}

@@ -95,7 +95,7 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
     const [snapshots, setSnapshots] = useState<SnapshotSpec[]>([]);
     useEffect(() => {
         model.mvsProvider.listSnapshots(entryId).then(setSnapshots);
-    }, [model]);
+    }, [model, entryId]);
 
     const [tab, setTab] = React.useState(kinds[0]);
 
