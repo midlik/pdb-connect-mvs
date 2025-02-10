@@ -43,7 +43,11 @@ export default App;
 
 class AppModel {
     viewer?: Viewer;
-    readonly mvsProvider = getDefaultMVSSnapshotProvider();
+    readonly mvsProvider = getDefaultMVSSnapshotProvider({
+        PdbApiUrlPrefix: 'http://localhost:3000/local_data/api',
+        PdbStructureUrlTemplate: 'http://localhost:3000/local_data/structures/{pdb}.bcif',
+        PdbStructureFormat: 'bcif'
+    });
     readonly snapshotSpec = new BehaviorSubject<SnapshotSpec | undefined>(undefined);
     readonly snapshot = new BehaviorSubject<MVSData | undefined>(undefined);
     readonly isBusy = new BehaviorSubject<boolean>(false);

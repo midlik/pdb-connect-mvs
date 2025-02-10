@@ -6,9 +6,11 @@ import { applyEntityColors, applyStandardComponents, applyStandardComponentsForE
 
 
 type SnapshotSpecParams = {
+    // TODO think about how to deal with mandatory (hopefully exhaustible) params vs optional params
     entry: { entry: string },
     assembly: { entry: string, assemblyId: string },
-    entity: { entry: string, entityId: string, assemblyId?: string },
+    entity: { entry: string, entityId: string, assemblyId?: string }, // TODO actually implement assemblyId param
+    domain: { entry: string, source: string, familyId: string, entityId: string },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
 const SnapshotKinds = ['entry', 'assembly', 'entity'] as const satisfies readonly SnapshotKind[];
@@ -20,7 +22,10 @@ export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
 
 
 export class MVSSnapshotProvider {
-    constructor(public readonly dataProvider: IDataProvider) { }
+    constructor(
+        public readonly dataProvider: IDataProvider,
+        public readonly config: MVSSnapshotProviderConfig,
+    ) { }
 
     listSnapshotKinds(): readonly SnapshotKind[] {
         return SnapshotKinds;
@@ -63,8 +68,10 @@ export class MVSSnapshotProvider {
     async getSnapshot(spec: SnapshotSpec): Promise<MVSData_State> {
         const builder = MVSData.createBuilder();
         const model = builder
-            .download({ url: `https://www.ebi.ac.uk/pdbe/entry-files/${spec.params.entry}_updated.cif` })
-            .parse({ format: 'mmcif' });
+            // .download({ url: `https://www.ebi.ac.uk/pdbe/entry-files/${spec.params.entry}_updated.cif` })
+            // .parse({ format: 'mmcif' });
+            .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
+            .parse({ format: this.config.PdbStructureFormat });
 
         const description: string[] = [];
         switch (spec.kind) {
@@ -165,13 +172,30 @@ export class MVSSnapshotProvider {
             outDescription.push(`Showing in the deposited model (entity not present in any assembly).`);
         }
     }
+    private async loadDomain(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['domain']) {
+        // TODO continue here
+    }
 }
 
+interface MVSSnapshotProviderConfig {
+    PdbApiUrlPrefix: string,
+    PdbStructureUrlTemplate: string,
+    PdbStructureFormat: 'bcif' | 'mmcif' | 'pdb',
+}
+
+const DefaultMVSSnapshotProviderConfig = {
+    PdbApiUrlPrefix: 'https://www.ebi.ac.uk/pdbe/api/',
+    /** URL template for PDB structural data, '{pdb}' will be replaced by actual PDB ID. */
+    PdbStructureUrlTemplate: 'https://www.ebi.ac.uk/pdbe/entry-files/{pdb}_updated.cif',
+    /** Format for PDB structural data. */
+    PdbStructureFormat: 'mmcif',
+} satisfies MVSSnapshotProviderConfig;
 
 /** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
-export function getDefaultMVSSnapshotProvider(): MVSSnapshotProvider {
-    const dataProvider = new ApiDataProvider('https://www.ebi.ac.uk/pdbe/api/');
-    return new MVSSnapshotProvider(dataProvider);
+export function getDefaultMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
+    const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
+    const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
+    return new MVSSnapshotProvider(dataProvider, fullConfig);
 }
 
 

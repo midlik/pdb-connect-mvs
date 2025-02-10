@@ -18,6 +18,7 @@ export class ApiDataProvider implements IDataProvider {
     }
 
     private async getWithoutCache(url: string): Promise<any> {
+        console.log('GET', url);
         const response = await fetch(url);
         if (response.status === 404) return {}; // PDBe API returns 404 in some cases (e.g. when there are no modified residues)
         if (!response.ok) throw new Error(`API call failed with code ${response.status} (${url})`);

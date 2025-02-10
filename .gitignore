@@ -25,3 +25,4 @@ yarn-error.log*
 # custom
 .DS_Store
 tmp/
+public/local_data
