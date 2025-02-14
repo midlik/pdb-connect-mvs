@@ -4,6 +4,9 @@ export interface IDataProvider {
     entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }>,
     modifiedResidues(pdbId: string): Promise<ModifiedResidueRecord[]>,
     entitiesInAssemblies(pdbId: string): Promise<{ [entityId: string]: { assemblies: string[] } }>,
+    siftsMappings(pdbId: string): Promise<{ [source: string]: { [family: string]: DomainRecord[] } }>,
+    siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }>,
+    authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
 }
 
 
@@ -93,9 +96,106 @@ export class ApiDataProvider implements IDataProvider {
         }
         return out;
     }
+    /** Get list of instances of SIFTS domains within a PDB entry,
+     * sorted by source (CATH, Pfam, Rfam, SCOP) and family (e.g. 1.10.630.10, PF00067). */
+    async siftsMappings(pdbId: string) {
+        const jsonProtein = await this.get(`${this.apiBaseUrl}/mappings/${pdbId}`);
+        const jsonNucleic = await this.get(`${this.apiBaseUrl}/nucleic_mappings/${pdbId}`);
+        const entryDataProtein = jsonProtein[pdbId] ?? {};
+        const entryDataNucleic = jsonNucleic[pdbId] ?? {};
+        const entryData = { ...entryDataProtein, ...entryDataNucleic };
 
+        const result = {} as { [source: string]: { [family: string]: DomainRecord[] } };
+        // for (const source of SIFTS_SOURCES) {
+        for (const source in entryData) {
+            result[source] = {};
+            const sourceData = entryData[source] ?? {};
+            for (const family of Object.keys(sourceData).sort()) {
+                const familyName = sourceData[family].identifier;
+                const mappings = sourceData[family].mappings;
+                result[source][family] = extractDomainMappings(mappings, source, family, familyName);
+            }
+        }
+        return result;
+    }
+    async siftsMappingsByEntity(pdbId: string) {
+        const mappings = await this.siftsMappings(pdbId);
+        return sortDomainsByEntity(mappings);
+    }
 
+    /** Get absolute number of modelled residues in each chain */
+    async authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }> {
+        const url = `${this.apiBaseUrl}/pdb/entry/polymer_coverage/${pdbId}`;
+        const json = await this.get(url);
+        const coverages: { [chainId: string]: number } = {};
+        for (const entity of json[pdbId]?.molecules ?? []) {
+            for (const chain of entity.chains ?? []) {
+                // const chainId = chain.struct_asym_id;
+                const chainId = chain.chain_id;
+                coverages[chainId] ??= 0;
+                for (const range of chain.observed ?? []) {
+                    const length = range.end.residue_number - range.start.residue_number + 1;
+                    coverages[chainId] += length;
+                }
+            }
+        }
+        return coverages;
+    }
 }
+
+
+/** Helper function to convert a domain mapping (describes one domain) from PDBeAPI format to a `DomainRecord`. */
+function extractDomainMappings(mappings: any[], source: string, family: string, familyName: string): DomainRecord[] {
+    const result: { [domainId: string]: DomainRecord } = {};
+    const domainCount: { [chain: string]: number } = {};
+    function getAdHocDomainId(chain: string) {
+        domainCount[chain] ??= 0;
+        const num = ++domainCount[chain]; // counting from 1
+        return num === 1 ? `${family}_${chain}` : `${family}_${chain}_${num}`;
+    }
+    for (const mapping of mappings) {
+        const domainId = mapping.domain ?? mapping.scop_id ?? getAdHocDomainId(mapping.chain_id);
+        const existingDomain = result[domainId];
+        const chunk: DomainChunkRecord = {
+            entityId: String(mapping.entity_id),
+            chainId: mapping.struct_asym_id,
+            authChainId: mapping.chain_id,
+            startResidue: mapping.start?.residue_number,
+            endResidue: mapping.end?.residue_number,
+            segment: existingDomain ? existingDomain.chunks.length + 1 : 1,
+        };
+        if (chunk.startResidue !== undefined && chunk.endResidue !== undefined && chunk.startResidue > chunk.endResidue) {
+            [chunk.startResidue, chunk.endResidue] = [chunk.endResidue, chunk.startResidue]; // you never know with the PDBe API, LOL
+        }
+        if (existingDomain) {
+            existingDomain.chunks.push(chunk);
+        } else {
+            result[domainId] = {
+                id: domainId,
+                source: source,
+                family: family,
+                familyName: familyName,
+                chunks: [chunk],
+            };
+        }
+    }
+    return Object.values(result).sort((a, b) => a.id < b.id ? -1 : 1);
+}
+
+/** Reorganize domains from source-family to source-family-entity */
+export function sortDomainsByEntity(domains: { [source: string]: { [family: string]: DomainRecord[] } }) {
+    const result = {} as { [source: string]: { [family: string]: { [entityId: string]: DomainRecord[] } } };
+    for (const [source, sourceDomains] of Object.entries(domains)) {
+        for (const [family, familyDomains] of Object.entries(sourceDomains)) {
+            for (const domain of familyDomains) {
+                const entityId = domain.chunks[0].entityId;
+                (((result[source] ??= {})[family] ??= {})[entityId] ??= []).push(domain);
+            }
+        }
+    }
+    return result;
+}
+
 
 
 /** Represents one assembly of a PDB entry. */
@@ -127,3 +227,33 @@ export interface ModifiedResidueRecord {
     /** Full compound code, e.g. 'Selenomethionine' */
     compoundName: string,
 }
+
+export interface DomainRecord {
+    id: string,
+    source: string,
+    family: string,
+    familyName: string,
+    chunks: DomainChunkRecord[],
+}
+
+/** Represents one contiguous residue range forming a domain */
+interface DomainChunkRecord {
+    /** label_entity_id */
+    entityId: string,
+    /** label_asym_id */
+    chainId: string,
+    /** auth_asym_id */
+    authChainId: string,
+    /** label_seq_id of the first residue */
+    startResidue: number | undefined,
+    /** label_seq_id of the last residue */
+    endResidue: number | undefined,
+    /** No idea what this was supposed to mean in the original process (probably segment number
+     * from the API before cutting into smaller segments by removing missing residues) */
+    segment: number,
+}
+
+// /** List of supported SIFTS source databases */
+// const SIFTS_SOURCES = ['CATH', 'Pfam', 'Rfam', 'SCOP'] as const;
+// /** SIFTS source database */
+// export type SiftsSource = typeof SIFTS_SOURCES[number];

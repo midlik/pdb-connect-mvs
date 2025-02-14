@@ -174,3 +174,28 @@ export function decideEntityType(entityInfo: EntityRecord): EntityType {
     }
     return 'polymer';
 }
+
+
+
+export function objForEach<T extends Record<string, unknown>>(obj: T, action: (...args: Pair<T, keyof T>) => void): void {
+    for (const key in obj) {
+        (action as any)(key, obj[key]);
+    }
+}
+
+const a = { x: 1, y: 2, name: 'hello' };
+objForEach(a, (key, value) => {
+    if (key === 'x') {
+        value + 1;
+        // value[0];
+    }
+    if (key === 'name') {
+        // Math.round(value);
+        value[0];
+    }
+})
+
+type Pair<TObj extends Record<string, unknown>, TKey extends keyof TObj> =
+    TKey extends keyof TObj
+    ? [key: TKey, value: TObj[TKey]]
+    : never; // extends clause needed to create discriminated union type properly

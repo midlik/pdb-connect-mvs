@@ -7,7 +7,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { BehaviorSubject } from 'rxjs';
 import './App.css';
-import { getDefaultMVSSnapshotProvider, SnapshotSpec } from './snapshot-provider/mvs-snapshot-provider';
+import { ApiDataProvider } from './snapshot-provider/data-provider';
+import { MolstarModelProvider } from './snapshot-provider/model-provider';
+import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, MVSSnapshotProviderConfig, SnapshotSpec } from './snapshot-provider/mvs-snapshot-provider';
 
 
 type Molstar = typeof import('molstar/lib/apps/viewer');
@@ -43,10 +45,9 @@ export default App;
 
 class AppModel {
     viewer?: Viewer;
-    readonly mvsProvider = getDefaultMVSSnapshotProvider({
-        PdbApiUrlPrefix: 'http://localhost:3000/local_data/api',
-        PdbStructureUrlTemplate: 'http://localhost:3000/local_data/structures/{pdb}.bcif',
-        PdbStructureFormat: 'bcif'
+    mvsProvider: MVSSnapshotProvider = getMVSSnapshotProvider({
+        // PdbApiUrlPrefix: 'http://localhost:3000/local_data/api',
+        // PdbStructureUrlTemplate: 'http://localhost:3000/local_data/structures/{pdb}.bcif',
     });
     readonly snapshotSpec = new BehaviorSubject<SnapshotSpec | undefined>(undefined);
     readonly snapshot = new BehaviorSubject<MVSData | undefined>(undefined);
@@ -150,4 +151,13 @@ function Description({ model }: { model: AppModel }) {
         {snapshot && <Markdown>{snapshot.metadata.description}</Markdown>}
         {!snapshot && <i style={{ color: 'gray' }}>No view selected.</i>}
     </div>;
+}
+
+
+/** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
+function getMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
+    const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
+    const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
+    const modelProvider = new MolstarModelProvider();
+    return new MVSSnapshotProvider(dataProvider, modelProvider, fullConfig);
 }

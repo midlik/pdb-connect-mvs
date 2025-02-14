@@ -1,8 +1,10 @@
 import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { Color } from 'molstar/lib/mol-util/color';
-import { ApiDataProvider, IDataProvider } from './data-provider';
+import { IDataProvider } from './data-provider';
 import { applyEntityColors, applyStandardComponents, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getEntityColors } from './helpers';
+import { IModelProvider } from './model-provider';
+import { Model } from 'molstar/lib/mol-model/structure';
 
 
 type SnapshotSpecParams = {
@@ -10,10 +12,10 @@ type SnapshotSpecParams = {
     entry: { entry: string },
     assembly: { entry: string, assemblyId: string },
     entity: { entry: string, entityId: string, assemblyId?: string }, // TODO actually implement assemblyId param
-    domain: { entry: string, source: string, familyId: string, entityId: string },
+    domain: { entry: string, source: string, familyId: string, entityId: string }, // source / family / entity / chain / instance
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain'] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -24,11 +26,23 @@ export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
 export class MVSSnapshotProvider {
     constructor(
         public readonly dataProvider: IDataProvider,
+        public readonly modelProvider: IModelProvider,
         public readonly config: MVSSnapshotProviderConfig,
     ) { }
 
     listSnapshotKinds(): readonly SnapshotKind[] {
         return SnapshotKinds;
+    }
+
+    // Expecting that this will be used for one entry only, so this 1-model caching should be sufficient
+    private _cachedEntryId?: string;
+    private _cachedModel?: Model;
+    private async getModel(entryId: string): Promise<Model> {
+        if (entryId !== this._cachedEntryId || !this._cachedModel) {
+            this._cachedEntryId = entryId;
+            this._cachedModel = await this.modelProvider.getModel(entryId);
+        }
+        return this._cachedModel;
     }
 
     async listSnapshots(entryId: string, kind?: SnapshotKind): Promise<SnapshotSpec[]> {
@@ -49,6 +63,24 @@ export class MVSSnapshotProvider {
                 for (const ent in entities) {
                     if (entities[ent].type === 'water') continue;
                     out.push({ kind: 'entity', name: `Entity ${ent}`, params: { entry: entryId, entityId: ent, assemblyId: undefined } });
+                }
+                break;
+            case 'domain':
+                const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
+                console.log('sifts:', domains);
+                for (const source in domains) {
+                    const srcDomains = domains[source];
+                    for (const familyId in srcDomains) {
+                        const famDomains = srcDomains[familyId];
+                        for (const entityId in famDomains) {
+                            out.push({ kind: 'domain', name: `Domain ${source} ${familyId} in entity ${entityId}`, params: { entry: entryId, source, familyId, entityId } });
+                            // const entDomains = famDomains[entityId];
+                            // for (const domain of entDomains) {
+                            //     out.push({ kind: 'domain', name: `Domain ${domain.id}: ${source} ${familyId} in entity ${entityId}`, params: { entry: entryId, source, entityId, familyId } });
+                            //     // TODO allow all-domain-in-chain view (with specific chain or auto) and specific-domain view?
+                            // }
+                        }
+                    }
                 }
                 break;
             default:
@@ -83,6 +115,9 @@ export class MVSSnapshotProvider {
                 break;
             case 'entity':
                 await this.loadEntity(model, description, spec.params);
+                break;
+            case 'domain':
+                await this.loadDomain(model, description, spec.params);
                 break;
         }
         description.push('---');
@@ -173,30 +208,58 @@ export class MVSSnapshotProvider {
         }
     }
     private async loadDomain(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['domain']) {
-        // TODO continue here
+        const struct = model.modelStructure();
+        struct.component().focus();
+
+        const coverages = await this.dataProvider.authChainCoverages(params.entry);
+        const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
+        const domainsInEntity = domainInfo[params.source][params.familyId][params.entityId];
+        const bestAuthChain = max(domainsInEntity.map(dom => dom.chunks[0].authChainId), chain => coverages[chain]);
+        const domainsInChain = domainsInEntity.filter(dom => dom.chunks[0].authChainId === bestAuthChain);
+
+        // const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        // const components = applyStandardComponents(struct, { modifiedResidues }); // TODO are modres wanted here?
+        // const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
+
+        // TODO 
+        outDescription.push(`## Domain ${params.source} ${params.familyId} in entity ${params.entityId}`);
+        outDescription.push('WIP');
     }
 }
 
-interface MVSSnapshotProviderConfig {
+function max<T, V>(array: T[], key: (elem: T) => V): T {
+    let argMax = array[0];
+    let max = key(argMax);
+    for (const elem of array) {
+        const value = key(elem)
+        if (value > max) {
+            argMax = elem;
+            max = value;
+        }
+    }
+    return argMax;
+}
+
+export interface MVSSnapshotProviderConfig {
     PdbApiUrlPrefix: string,
     PdbStructureUrlTemplate: string,
     PdbStructureFormat: 'bcif' | 'mmcif' | 'pdb',
 }
 
-const DefaultMVSSnapshotProviderConfig = {
+export const DefaultMVSSnapshotProviderConfig = {
     PdbApiUrlPrefix: 'https://www.ebi.ac.uk/pdbe/api/',
     /** URL template for PDB structural data, '{pdb}' will be replaced by actual PDB ID. */
-    PdbStructureUrlTemplate: 'https://www.ebi.ac.uk/pdbe/entry-files/{pdb}_updated.cif',
+    PdbStructureUrlTemplate: 'https://www.ebi.ac.uk/pdbe/entry-files/{pdb}.bcif',
     /** Format for PDB structural data. */
-    PdbStructureFormat: 'mmcif',
+    PdbStructureFormat: 'bcif',
 } satisfies MVSSnapshotProviderConfig;
 
-/** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
-export function getDefaultMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
-    const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
-    const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
-    return new MVSSnapshotProvider(dataProvider, fullConfig);
-}
+// /** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
+// export function getDefaultMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
+//     const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
+//     const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
+//     return new MVSSnapshotProvider(dataProvider, fullConfig);
+// }
 
 
 /*
@@ -207,6 +270,7 @@ All existing PDBImages states:
 - Assembly
 - Entity
 - Domains - possibility to show specific instance, perhaps
+  - Could have: more sofisticated view with whole structure / this chain / domains from other families / domains from this family / this domain instance
 - Ligand env - with controled interactions (toggle individual interaction types, there is an API for this), with volumes (adjustable isovalue)
 - Modres show individual instances
 - Bfactor include tooltip
