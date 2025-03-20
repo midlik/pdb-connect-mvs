@@ -13,7 +13,7 @@ type SnapshotSpecParams = {
     // TODO think about how to deal with mandatory (hopefully exhaustible) params vs optional params
     entry: { entry: string },
     assembly: { entry: string, assemblyId: string },
-    entity: { entry: string, entityId: string, assemblyId?: string }, // TODO actually implement assemblyId param
+    entity: { entry: string, entityId: string, assemblyId?: string },
     domain: { entry: string, source: string, familyId: string, entityId: string }, // source / family / entity / chain / instance
 }
 type SnapshotKind = keyof SnapshotSpecParams;
@@ -170,14 +170,21 @@ export class MVSSnapshotProvider {
     }
 
     private async loadEntity(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['entity']) {
+        console.log('loadEntity', params)
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId;
-        // Find out which assembly contains this entity and select where to render (priority: preferred assembly > any assembly > deposited model)
-        const entitiesInAssemblies = await this.dataProvider.entitiesInAssemblies(params.entry);
-        const inAssemblies = entitiesInAssemblies[params.entityId]?.assemblies ?? [];
-        const theAssembly = (preferredAssembly !== undefined && inAssemblies.includes(preferredAssembly))
-            ? preferredAssembly
-            : (inAssemblies.length > 0 ? inAssemblies[0] : undefined);
+
+        let theAssembly: string | undefined;
+        if (params.assemblyId) {
+            theAssembly = params.assemblyId;
+        } else {
+            // Find out which assembly contains this entity and select where to render (priority: preferred assembly > any assembly > deposited model)
+            const entitiesInAssemblies = await this.dataProvider.entitiesInAssemblies(params.entry);
+            const inAssemblies = entitiesInAssemblies[params.entityId]?.assemblies ?? [];
+            theAssembly = (preferredAssembly !== undefined && inAssemblies.includes(preferredAssembly))
+                ? preferredAssembly
+                : (inAssemblies.length > 0 ? inAssemblies[0] : undefined);
+        }
 
         const struct = theAssembly !== undefined ? model.assemblyStructure({ assembly_id: theAssembly }) : model.modelStructure();
         struct.component().focus();
@@ -209,9 +216,9 @@ export class MVSSnapshotProvider {
         if (theAssembly === preferredAssembly) {
             outDescription.push(`Showing in assembly ${theAssembly} (preferred).`);
         } else if (theAssembly !== undefined) {
-            outDescription.push(`Showing in assembly ${theAssembly} (entity not present in the preferred assembly ${preferredAssembly}).`);
+            outDescription.push(`Showing in assembly ${theAssembly}.`);
         } else {
-            outDescription.push(`Showing in the deposited model (entity not present in any assembly).`);
+            outDescription.push(`Showing in the deposited model.`);
         }
     }
 
