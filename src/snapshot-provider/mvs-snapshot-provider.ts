@@ -1,10 +1,12 @@
 import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
-import { Color } from 'molstar/lib/mol-util/color';
-import { IDataProvider } from './data-provider';
-import { applyEntityColors, applyStandardComponents, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getEntityColors } from './helpers';
-import { IModelProvider } from './model-provider';
 import { Model } from 'molstar/lib/mol-model/structure';
+import { Color } from 'molstar/lib/mol-util/color';
+import { ANNOTATION_COLORS } from './colors';
+import { IDataProvider } from './data-provider';
+import { applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, HexColor, smartFadedOpacity } from './helpers';
+import { IModelProvider } from './model-provider';
+import { getChainInfo, structurePolymerResidueCount } from './structure-info';
 
 
 type SnapshotSpecParams = {
@@ -22,6 +24,9 @@ export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     ? { kind: TKind, params: SnapshotSpecParams[TKind], name: string }
     : never; // extends clause needed to create discriminated union type properly
 
+
+/** Level of opacity used for domain and ligand images */
+const FADED_OPACITY = 0.5;
 
 export class MVSSnapshotProvider {
     constructor(
@@ -70,6 +75,7 @@ export class MVSSnapshotProvider {
                 console.log('sifts:', domains);
                 for (const source in domains) {
                     const srcDomains = domains[source];
+                    console.log('src', source)
                     for (const familyId in srcDomains) {
                         const famDomains = srcDomains[familyId];
                         for (const entityId in famDomains) {
@@ -100,8 +106,6 @@ export class MVSSnapshotProvider {
     async getSnapshot(spec: SnapshotSpec): Promise<MVSData_State> {
         const builder = MVSData.createBuilder();
         const model = builder
-            // .download({ url: `https://www.ebi.ac.uk/pdbe/entry-files/${spec.params.entry}_updated.cif` })
-            // .parse({ format: 'mmcif' });
             .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
             .parse({ format: this.config.PdbStructureFormat });
 
@@ -180,7 +184,10 @@ export class MVSSnapshotProvider {
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
-        const representations = applyStandardRepresentations(components, { opacityFactor: 0.3 }); // TODO compute smart opacity from structure size, like in PDBImages
+
+        const modelData = await this.getModel(params.entry);
+        const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, theAssembly));
+        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
 
         for (const repr of Object.values(representations)) {
             repr.color({ color: 'gray' });
@@ -193,7 +200,7 @@ export class MVSSnapshotProvider {
         const entityComponents = applyStandardComponentsForEntity(struct, params.entityId, entityType, { modifiedResidues });
         const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1 });
         for (const repr of Object.values(entityRepresentations)) {
-            repr.color({ color: Color.toHexStyle(entityColors[params.entityId]) as any });
+            repr.color({ color: entityColors[params.entityId] as HexColor });
         }
 
         outDescription.push(`## Entity ${params.entityId}`);
@@ -207,23 +214,46 @@ export class MVSSnapshotProvider {
             outDescription.push(`Showing in the deposited model (entity not present in any assembly).`);
         }
     }
+
     private async loadDomain(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['domain']) {
         const struct = model.modelStructure();
-        struct.component().focus();
 
         const coverages = await this.dataProvider.authChainCoverages(params.entry);
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
+        const domainColors = getDomainColors(domainInfo); // TODO cache? (incl. many things that need to be computed just once)
+
         const domainsInEntity = domainInfo[params.source][params.familyId][params.entityId];
-        const bestAuthChain = max(domainsInEntity.map(dom => dom.chunks[0].authChainId), chain => coverages[chain]);
-        const domainsInChain = domainsInEntity.filter(dom => dom.chunks[0].authChainId === bestAuthChain);
+        const shownAuthChain = max(domainsInEntity.map(dom => dom.chunks[0].authChainId), chain => coverages[chain]);
+        const domainsInChain = domainsInEntity.filter(dom => dom.chunks[0].authChainId === shownAuthChain);
+        struct.component({ selector: { auth_asym_id: shownAuthChain } }).focus();
 
-        // const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        // const components = applyStandardComponents(struct, { modifiedResidues }); // TODO are modres wanted here?
-        // const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
 
-        // TODO 
-        outDescription.push(`## Domain ${params.source} ${params.familyId} in entity ${params.entityId}`);
-        outDescription.push('WIP');
+        const modelData = await this.getModel(params.entry);
+        const chainInfo = getChainInfo(modelData);
+        const chainsToShow = Object.keys(chainInfo).filter(c => chainInfo[c].authChainId === shownAuthChain);
+        const entitiesInfo = await this.dataProvider.entities(params.entry);
+        const shownPolymerLabelChain = Object.keys(chainInfo).find(c => chainInfo[c].authChainId === shownAuthChain && decideEntityType(entitiesInfo[chainInfo[c].entityId]) === 'polymer');
+        const components = applyStandardComponentsForChains(struct, chainsToShow, chainInfo, entitiesInfo, { modifiedResidues });
+        const representations = applyStandardRepresentations(components, { opacityFactor: FADED_OPACITY })
+        for (const repr of Object.values(representations)) {
+            repr.color({ color: 'gray' });
+        }
+        for (const domain of domainsInChain) {
+            const domainComp = struct.component({ selector: domain.chunks.map(chunk => ({ label_asym_id: chunk.chainId, beg_label_seq_id: chunk.startResidue, end_label_seq_id: chunk.endResidue })) });
+            const modresInDomain = modifiedResidues.filter(r => r.labelAsymId === domain.chunks[0].chainId && domain.chunks.some(dom => (dom.startResidue ?? Infinity) <= r.labelSeqId && r.labelSeqId <= (dom.endResidue ?? -Infinity)));
+            const modresComp = struct.component({ selector: modresInDomain.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) });
+            const color = (domainColors[domain.id] ?? Color.toHexStyle(ANNOTATION_COLORS[0])) as HexColor;
+            domainComp.representation({ type: 'cartoon' }).color({ color });
+            modresComp.representation({ type: 'ball_and_stick' }).color({ color });
+        }
+
+        const chainDesc = shownAuthChain !== shownPolymerLabelChain ? `${shownPolymerLabelChain} [auth ${shownAuthChain}]` : shownPolymerLabelChain;
+        outDescription.push(
+            `## Domain ${params.source} ${params.familyId} in entity ${params.entityId}`,
+            `PDB entry ${params.entry} contains ${domainsInEntity.length} ${domainsInEntity.length === 1 ? 'copy' : 'copies'} of ${params.source} domain ${params.familyId} in entity ${params.entityId}.`,
+            `Showing ${domainsInChain.length} ${domainsInChain.length === 1 ? 'copy' : 'copies'} in chain ${chainDesc}.`,
+        );
     }
 }
 
