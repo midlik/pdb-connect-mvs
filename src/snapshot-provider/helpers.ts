@@ -4,7 +4,7 @@ import { LipidNames } from 'molstar/lib/mol-model/structure/model/types/lipids';
 import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/saccharides';
 import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol';
 import { Color } from 'molstar/lib/mol-util/color';
-import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS } from './colors';
+import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS } from './colors';
 import { DomainRecord, EntityRecord, ModifiedResidueRecord } from './data-provider';
 import { ChainInfo } from './structure-info';
 
@@ -203,6 +203,19 @@ export function getDomainColors(domains: { [source: string]: { [family: string]:
         }
     }
     return out;
+}
+
+export function getModresColors(modifiedResidues: ModifiedResidueRecord[]) {
+    const colorIterator = cycleIterator(MODRES_COLORS);
+    const out: { [compId: string]: string } = {};
+    for (const modres of uniqueModresCompIds(modifiedResidues)) {
+        out[modres] = Color.toHexStyle(colorIterator.next().value!);
+    }
+    return out;
+}
+
+export function uniqueModresCompIds(modifiedResidues: ModifiedResidueRecord[]) {
+    return Array.from(new Set(modifiedResidues.map(r => r.compoundId))).sort();
 }
 
 export function decideEntityType(entityInfo: EntityRecord): EntityType {

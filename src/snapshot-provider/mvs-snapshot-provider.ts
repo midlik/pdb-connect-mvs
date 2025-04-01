@@ -2,9 +2,9 @@ import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
-import { ANNOTATION_COLORS } from './colors';
+import { ANNOTATION_COLORS, MODRES_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, HexColor, smartFadedOpacity } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, HexColor, smartFadedOpacity, StandardRepresentations, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
 import { chainSurroundings, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
 
@@ -16,9 +16,10 @@ type SnapshotSpecParams = {
     entity: { entry: string, entityId: string, assemblyId?: string },
     domain: { entry: string, source: string, familyId: string, entityId: string }, // source / family / entity / chain / instance
     ligand: { entry: string, compId: string, labelAsymId?: string },
+    modres: { entry: string, compId: string },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres'] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -98,6 +99,12 @@ export class MVSSnapshotProvider {
                     }
                 }
                 break;
+            case 'modres':
+                const modifiedResidues = await this.dataProvider.modifiedResidues(entryId);
+                for (const compId of uniqueModresCompIds(modifiedResidues)) {
+                    out.push({ kind: 'modres', name: `Modified residue ${compId}`, params: { entry: entryId, compId } });
+                }
+                break;
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }
@@ -134,6 +141,9 @@ export class MVSSnapshotProvider {
                 break;
             case 'ligand':
                 await this.loadLigand(model, description, spec.params);
+                break;
+            case 'modres':
+                await this.loadModres(model, description, spec.params);
                 break;
         }
         description.push('---');
@@ -322,7 +332,42 @@ export class MVSSnapshotProvider {
         const authAsymId = chainInfo[labelAsymId].authChainId;
 
         outDescription.push(`## Ligand ${params.compId}`);
-        outDescription.push(`Showing ligand **${entityRecord.names}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}].`);
+        outDescription.push(`Showing ligand **${entityRecord.names}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}] in the deposited model.`);
+    }
+
+    private async loadModres(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['modres']) {
+        const assembliesInfo = await this.dataProvider.assemblies(params.entry);
+        const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId; // preferred assembly
+
+        const struct = preferredAssembly !== undefined ? model.assemblyStructure({ assembly_id: preferredAssembly }) : model.modelStructure();
+        struct.component().focus();
+
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const components = applyStandardComponents(struct, { modifiedResidues });
+
+        const modelData = await this.getModel(params.entry);
+        const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, preferredAssembly));
+        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
+
+        for (const repr of Object.values(representations)) {
+            repr.color({ color: 'gray' });
+        }
+
+        const modresComp = struct.component({
+            selector: modifiedResidues.filter(r => r.compoundId === params.compId).map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })),
+        });
+        const modresRepr = modresComp.representation({ type: 'ball_and_stick' });
+        const modresColors = getModresColors(modifiedResidues);
+        modresRepr.color({ color: modresColors[params.compId] as HexColor ?? MODRES_COLORS[0] });
+
+        const modresName = modifiedResidues.find(r => r.compoundId === params.compId)?.compoundName;
+        outDescription.push(`## Modified residue ${params.compId}`);
+        outDescription.push(modresName ? `__${modresName}__` : '*Modified residue name not available*');
+        if (preferredAssembly !== undefined) {
+            outDescription.push(`Showing in assembly ${preferredAssembly} (preferred).`);
+        } else {
+            outDescription.push(`Showing in the deposited model.`);
+        }
     }
 }
 
