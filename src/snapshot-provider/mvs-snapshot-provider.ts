@@ -4,9 +4,9 @@ import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, HexColor, smartFadedOpacity } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, HexColor, smartFadedOpacity } from './helpers';
 import { IModelProvider } from './model-provider';
-import { getChainInfo, structurePolymerResidueCount } from './structure-info';
+import { chainSurroundings, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
 
 
 type SnapshotSpecParams = {
@@ -15,9 +15,10 @@ type SnapshotSpecParams = {
     assembly: { entry: string, assemblyId: string },
     entity: { entry: string, entityId: string, assemblyId?: string },
     domain: { entry: string, source: string, familyId: string, entityId: string }, // source / family / entity / chain / instance
+    ligand: { entry: string, compId: string, labelAsymId?: string },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand'] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -72,10 +73,8 @@ export class MVSSnapshotProvider {
                 break;
             case 'domain':
                 const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
-                console.log('sifts:', domains);
                 for (const source in domains) {
                     const srcDomains = domains[source];
-                    console.log('src', source)
                     for (const familyId in srcDomains) {
                         const famDomains = srcDomains[familyId];
                         for (const entityId in famDomains) {
@@ -86,6 +85,16 @@ export class MVSSnapshotProvider {
                             //     // TODO allow all-domain-in-chain view (with specific chain or auto) and specific-domain view?
                             // }
                         }
+                    }
+                }
+                break;
+            case 'ligand':
+                const entities2 = await this.dataProvider.entities(entryId); // thank you switch for not letting me have the same var name again
+                for (const ent in entities2) {
+                    const entityRecord = entities2[ent];
+                    if (entityRecord.type === 'bound' && entityRecord.compIds.length === 1) {
+                        const compId = entityRecord.compIds[0];
+                        out.push({ kind: 'ligand', name: `Ligand ${compId}`, params: { entry: entryId, compId, labelAsymId: undefined } });
                     }
                 }
                 break;
@@ -123,6 +132,9 @@ export class MVSSnapshotProvider {
             case 'domain':
                 await this.loadDomain(model, description, spec.params);
                 break;
+            case 'ligand':
+                await this.loadLigand(model, description, spec.params);
+                break;
         }
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
@@ -147,7 +159,6 @@ export class MVSSnapshotProvider {
         outDescription.push('## Deposited model');
     }
 
-
     private async loadAssembly(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['assembly']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const assInfo = assembliesInfo.find(ass => ass.assemblyId === params.assemblyId);
@@ -170,7 +181,6 @@ export class MVSSnapshotProvider {
     }
 
     private async loadEntity(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['entity']) {
-        console.log('loadEntity', params)
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId;
 
@@ -227,7 +237,7 @@ export class MVSSnapshotProvider {
 
         const coverages = await this.dataProvider.authChainCoverages(params.entry);
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
-        const domainColors = getDomainColors(domainInfo); // TODO cache? (incl. many things that need to be computed just once)
+        const domainColors = getDomainColors(domainInfo); // TODO cache? (incl. many things that need to be computed just once, e.g. getChainInfo)
 
         const domainsInEntity = domainInfo[params.source][params.familyId][params.entityId];
         const shownAuthChain = max(domainsInEntity.map(dom => dom.chunks[0].authChainId), chain => coverages[chain]);
@@ -261,6 +271,58 @@ export class MVSSnapshotProvider {
             `PDB entry ${params.entry} contains ${domainsInEntity.length} ${domainsInEntity.length === 1 ? 'copy' : 'copies'} of ${params.source} domain ${params.familyId} in entity ${params.entityId}.`,
             `Showing ${domainsInChain.length} ${domainsInChain.length === 1 ? 'copy' : 'copies'} in chain ${chainDesc}.`,
         );
+    }
+
+    private async loadLigand(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['ligand']) {
+        const entities = await this.dataProvider.entities(params.entry);
+        const entityRecord = Object.values(entities).find(ent => ent.compIds.length === 1 && ent.compIds[0] === params.compId);
+        if (entityRecord === undefined) {
+            outDescription.push(`Ligand ${params.compId} not found`);
+            return;
+        }
+        let labelAsymId: string;
+        if (params.labelAsymId) {
+            if (!entityRecord.chains.includes(params.labelAsymId)) {
+                outDescription.push(`Ligand ${params.compId} not found in chain ${params.labelAsymId}`);
+                return;
+            }
+            labelAsymId = params.labelAsymId;
+        } else {
+            labelAsymId = entityRecord.chains[0];
+        }
+
+        const struct = model.modelStructure();
+
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const components = applyStandardComponents(struct, { modifiedResidues });
+
+        const modelData = await this.getModel(params.entry);
+        const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, undefined));
+        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
+
+        for (const repr of Object.values(representations)) {
+            repr.color({ color: 'gray' });
+        }
+        const ligandComp = struct.component({ selector: { label_asym_id: labelAsymId } });
+
+        const entityColors = getEntityColors(entities);
+        const elementsInEntities = getElementsInEntities(modelData); // TODO consider just using all elements from the model
+        const allElements = Array.from(new Set(Object.values(elementsInEntities).flat())).sort();
+        const ligandRepr = ligandComp.representation({ type: 'ball_and_stick' }).color({ color: entityColors[entityRecord.id] as HexColor });
+        applyElementColors(ligandRepr, elementsInEntities[entityRecord.id]);
+
+        const LIGAND_ENVIRONMENT_RADIUS = 5;
+        const environmentSelector = chainSurroundings(modelData, labelAsymId, LIGAND_ENVIRONMENT_RADIUS);
+        const environmentComp = struct.component({ selector: environmentSelector });
+        const environmentRepr = environmentComp.representation({ type: 'ball_and_stick', size_factor: 0.5 }).color({ color: 'gray' });
+        applyElementColors(environmentRepr, allElements);
+        environmentComp.focus();
+
+        const chainInfo = getChainInfo(modelData);
+        const authAsymId = chainInfo[labelAsymId].authChainId;
+
+        outDescription.push(`## Ligand ${params.compId}`);
+        outDescription.push(`Showing ligand **${entityRecord.names}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}].`);
     }
 }
 

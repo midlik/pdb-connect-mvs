@@ -157,6 +157,18 @@ export function applyEntityColors(repr: Builder.Representation, colors: { [entit
     }
 }
 
+const UKNOWN_ELEMENT_COLOR = ElementSymbolColors.UUH;
+
+export function applyElementColors(repr: Builder.Representation, elements: string[]) {
+    for (const element of elements) {
+        if (element === 'C') continue; // keep underlying color for carbons
+        repr.color({
+            selector: { type_symbol: element },
+            color: Color.toHexStyle(ElementSymbolColors[element as keyof typeof ElementSymbolColors] ?? UKNOWN_ELEMENT_COLOR) as HexColor,
+        });
+    }
+}
+
 export function applyOpacity(repr: Builder.Representation, opacity: number | undefined) {
     if (opacity !== undefined && opacity !== 1) return repr.opacity({ opacity });
     else return repr;

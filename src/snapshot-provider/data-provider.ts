@@ -51,15 +51,17 @@ export class ApiDataProvider implements IDataProvider {
 
 
     /** Get type and residue code (chem_comp_id, when it makes sense) of entities within a PDB entry. */
-    async entities(pdbId: string): Promise<{ [entityId: number]: EntityRecord }> {
+    async entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }> {
         const url = `${this.apiBaseUrl}/pdb/entry/molecules/${pdbId}`;
         const json = await this.get(url);
-        const result: { [entityId: number]: EntityRecord } = {};
+        const result: { [entityId: string]: EntityRecord } = {};
         for (const record of json[pdbId] ?? []) {
             result[record.entity_id] = {
+                id: `${record.entity_id}`, // entity ID is string, even though the API may serve it as number
                 names: record.molecule_name ?? [],
                 type: record.molecule_type,
                 compIds: record.chem_comp_ids ?? [],
+                chains: record.in_struct_asyms ?? [],
             };
         }
         return result;
@@ -211,9 +213,12 @@ export interface AssemblyRecord {
 }
 
 export interface EntityRecord {
+    id: string,
     names: string,
     type: string,
     compIds: string[],
+    /** List of label_asym_ids corresponding to this entity */
+    chains: string[],
 }
 
 /** Represents one instance of a modified residue. */

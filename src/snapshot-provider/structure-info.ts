@@ -1,7 +1,7 @@
 /** Function for extracting useful info from structure/model data. */
 
-import { Model, Structure } from 'molstar/lib/mol-model/structure';
 import { ModelSymmetry } from 'molstar/lib/mol-model-formats/structure/property/symmetry';
+import { Model, ResidueIndex } from 'molstar/lib/mol-model/structure';
 
 
 export type ChainInfo = { [labelChainId: string]: { authChainId: string, entityId: string } };
@@ -74,4 +74,111 @@ function getChainPolymerResidueCounts(model: Model) {
         chainSizes[chainId] = nRes;
     }
     return chainSizes;
+}
+
+export function getElementsInEntities(model: Model) {
+    const elementSets: { [entityId: string]: Set<string> } = {};
+    const h = model.atomicHierarchy;
+    const nAtoms = h.atoms._rowCount;
+    for (let iAtom = 0; iAtom < nAtoms; iAtom++) {
+        const element = h.atoms.type_symbol.value(iAtom);
+        const iChain = h.chainAtomSegments.index[iAtom];
+        const entityId = h.chains.label_entity_id.value(iChain);
+        (elementSets[entityId] ??= new Set()).add(element);
+    }
+    const out: { [entityId: string]: string[] } = {};
+    for (const entityId in elementSets) {
+        out[entityId] = Array.from(elementSets[entityId]).sort();
+    }
+    return out;
+}
+
+/** Select surroundings of a chain in the model, as whole residues. */
+export function chainSurroundings(model: Model, labelChainId: string, radius: number) {
+    const h = model.atomicHierarchy;
+    const coords = model.atomicConformation;
+
+    const iChain = findChainIndexByLabelAsymId(model, labelChainId);
+    if (iChain < 0) throw new Error(`Chain ${labelChainId} not found`);
+    const fromAtom = h.chainAtomSegments.offsets[iChain];
+    const toAtom = h.chainAtomSegments.offsets[iChain + 1];
+    // Compute target bounding box
+    const bbox = {
+        xmin: coords.x[fromAtom],
+        xmax: coords.x[fromAtom],
+        ymin: coords.y[fromAtom],
+        ymax: coords.y[fromAtom],
+        zmin: coords.z[fromAtom],
+        zmax: coords.z[fromAtom],
+    };
+    for (let iTgtAtom = fromAtom + 1; iTgtAtom < toAtom; iTgtAtom++) {
+        bbox.xmin = Math.min(bbox.xmin, coords.x[iTgtAtom]);
+        bbox.xmax = Math.max(bbox.xmax, coords.x[iTgtAtom]);
+        bbox.ymin = Math.min(bbox.ymin, coords.y[iTgtAtom]);
+        bbox.ymax = Math.max(bbox.ymax, coords.y[iTgtAtom]);
+        bbox.zmin = Math.min(bbox.zmin, coords.z[iTgtAtom]);
+        bbox.zmax = Math.max(bbox.zmax, coords.z[iTgtAtom]);
+    };
+    // Extend bounding box by radius
+    bbox.xmin -= radius;
+    bbox.xmax += radius;
+    bbox.ymin -= radius;
+    bbox.ymax += radius;
+    bbox.zmin -= radius;
+    bbox.zmax += radius;
+
+    // Filter model atoms
+    const outResidues: ResidueIndex[] = [];
+    const sqRadius = radius ** 2;
+    const nAtoms = h.atoms._rowCount;
+    for (let iAtom = 0; iAtom < nAtoms; iAtom++) {
+        // Don't include target in surroundings
+        if (iAtom >= fromAtom && iAtom < toAtom) continue;
+        // Pre-filter by bounding box
+        const x = coords.x[iAtom];
+        const y = coords.y[iAtom];
+        const z = coords.z[iAtom];
+        if (x < bbox.xmin) continue;
+        if (x > bbox.xmax) continue;
+        if (y < bbox.ymin) continue;
+        if (y > bbox.ymax) continue;
+        if (z < bbox.zmin) continue;
+        if (z > bbox.zmax) continue;
+        // Filter by distance to any target atom
+        for (let iTgtAtom = fromAtom; iTgtAtom < toAtom; iTgtAtom++) {
+            const sqDist = (x - coords.x[iTgtAtom]) ** 2 + (y - coords.y[iTgtAtom]) ** 2 + (z - coords.z[iTgtAtom]) ** 2;
+            if (sqDist <= sqRadius) {
+                const iRes = h.residueAtomSegments.index[iAtom];
+                if (outResidues[outResidues.length - 1] !== iRes) {
+                    outResidues.push(iRes);
+                }
+                break;
+            }
+        }
+    }
+    const out = [];
+    for (const iRes of outResidues) {
+        const iAtom = h.residueAtomSegments.offsets[iRes];
+        const iChain = h.chainAtomSegments.index[iAtom];
+        const label_asym_id = h.chains.label_asym_id.value(iChain);
+        const label_seq_id = h.residues.label_seq_id.value(iRes);
+        const auth_seq_id = h.residues.auth_seq_id.value(iRes);
+        const pdbx_PDB_ins_code = h.residues.pdbx_PDB_ins_code.value(iRes);
+        out.push({ label_asym_id, label_seq_id, auth_seq_id, pdbx_PDB_ins_code });
+    }
+    return out;
+    // TODO think if we will need to run this on assemblies too (if so, it would just be easier to build structure and run query on it, StructureQueryHelper.run)
+    // (or use API)
+}
+
+/** Return chain index or -1 if chain not found. */
+function findChainIndexByLabelAsymId(model: Model, labelChainId: string): number {
+    const h = model.atomicHierarchy;
+    const nChains = h.chains.label_asym_id.rowCount;
+    for (let i = 0; i < nChains; i++) {
+        if (h.chains.label_asym_id.value(i) === labelChainId) {
+            return i;
+        }
+    }
+    return -1;
 }
