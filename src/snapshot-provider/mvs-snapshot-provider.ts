@@ -2,7 +2,7 @@ import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
-import { ANNOTATION_COLORS, MODRES_COLORS } from './colors';
+import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
 import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, HexColor, smartFadedOpacity, StandardRepresentations, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
@@ -19,9 +19,10 @@ type SnapshotSpecParams = {
     ligand: { entry: string, compId: string, labelAsymId?: string },
     modres: { entry: string, compId: string },
     bfactor: { entry: string },
+    validation: { entry: string },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation'] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -114,6 +115,9 @@ export class MVSSnapshotProvider {
                     out.push({ kind: 'bfactor', name: `B-factor`, params: { entry: entryId } });
                 }
                 break;
+            case 'validation':
+                out.push({ kind: 'validation', name: `Validation`, params: { entry: entryId } });
+                break;
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }
@@ -156,6 +160,9 @@ export class MVSSnapshotProvider {
                 break;
             case 'bfactor':
                 await this.loadBfactor(model, description, spec.params);
+                break;
+            case 'validation':
+                await this.loadValidation(model, description, spec.params);
                 break;
         }
         description.push('---');
@@ -404,6 +411,48 @@ export class MVSSnapshotProvider {
         outDescription.push(`## B-factor`);
         outDescription.push(`Showing B-factor for the deposited model.`);
         outDescription.push(`**This is the dumbest implementation ever and should under no circumstances never ever be used in real life! Its only purpose is to demonstrate shortcomings of the current MVS feature set.**`);
+    }
+
+    private async loadValidation(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['validation']) {
+        const struct = model.modelStructure();
+
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const components = applyStandardComponents(struct, { modifiedResidues });
+        const representations = applyStandardRepresentations(components, {});
+        const reprList = Object.values(representations);
+
+        const validationReport = await this.dataProvider.pdbeStructureQualityReport(params.entry);
+        if (validationReport !== undefined) {
+            for (const repr of Object.values(representations)) {
+                repr.color({ color: VALIDATION_COLORS[0] }); // base color for residues without issues (not listed in the report)
+            }
+            for (const molecule of validationReport.molecules) {
+                for (const chain of molecule.chains) {
+                    for (const residue of chain.models[0].residues) {
+                        const issueCount = Math.min(residue.outlier_types.length, 3) as 0 | 1 | 2 | 3;
+                        for (const repr of reprList) {
+                            repr.color({
+                                selector: {
+                                    label_asym_id: chain.struct_asym_id,
+                                    label_seq_id: residue.residue_number,
+                                    auth_seq_id: Number(residue.author_residue_number),
+                                    pdbx_PDB_ins_code: residue.author_insertion_code,
+                                },
+                                color: VALIDATION_COLORS[issueCount],
+                            });
+                        }
+                    }
+                }
+            }
+            outDescription.push(`## Validation`);
+            outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry outliers. Green - no outliers, yellow - one outlier, orange - two outliers, red - three or more outliers.`);
+        } else {
+            for (const repr of Object.values(representations)) {
+                repr.color({ color: VALIDATION_COLORS.NOT_APPLICABLE });
+            }
+            outDescription.push(`## Validation`);
+            outDescription.push(`PDBe Structure Quality Report not available for this entry.`);
+        }
     }
 }
 

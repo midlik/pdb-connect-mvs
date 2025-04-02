@@ -72,6 +72,8 @@ class AppModel {
         this.isBusy.next(true);
         try {
             const snapshot: MVSData = await this.mvsProvider.getSnapshot(snapshotSpec);
+            // const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
+            // console.log('mvsj', mvsj.length, mvsj)
             console.log(Molstar.PluginExtensions.mvs.MVSData.toPrettyString(snapshot))
             // await new Promise(resolve => setTimeout(resolve, 500));
             this.snapshot.next(snapshot);

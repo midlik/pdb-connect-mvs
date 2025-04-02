@@ -8,6 +8,7 @@ export interface IDataProvider {
     siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }>,
     authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
     experimentalMethods(pdbId: string): Promise<string[]>,
+    pdbeStructureQualityReport(pdbId: string): Promise<PdbeStructureQualityReport | undefined>,
 }
 
 
@@ -156,6 +157,36 @@ export class ApiDataProvider implements IDataProvider {
             }
         } return methods;
     }
+
+    /** Get PDBe Structure Quality Report */
+    async pdbeStructureQualityReport(pdbId: string): Promise<PdbeStructureQualityReport | undefined> {
+        const url = `${this.apiBaseUrl}/validation/residuewise_outlier_summary/entry/${pdbId}`;
+        const json = await this.get(url);
+        const data = json[pdbId] as PdbeStructureQualityReport;
+        // console.log('validation data:', data)
+        // console.log('validation datum:', data.molecules[0].chains[0].models[0].residues[0])
+        return data;
+    }
+}
+
+type PdbeStructureQualityReport = {
+    molecules: {
+        entity_id: number,
+        chains: {
+            chain_id: string,
+            struct_asym_id: string,
+            models: {
+                model_id: number,
+                residues: {
+                    residue_number: number,
+                    author_residue_number: number | string, // this hurts but yes, sometimes it's a string (e.g. 8eiu entity 6 chain F [auth A])
+                    author_insertion_code: string,
+                    alt_code: string,
+                    outlier_types: string[],
+                }[],
+            }[],
+        }[],
+    }[],
 }
 
 

@@ -38,6 +38,15 @@ export const MODRES_COLORS = ANNOTATION_COLORS.slice().reverse();
 export const DEFAULT_COLORS = ENTITY_COLORS;
 
 
+
+export const VALIDATION_COLORS = {
+    NOT_APPLICABLE: '#aaaaaa', // not applicable
+    0: '#00ff00', // 0 issues
+    1: '#ffff00', // 1 issues
+    2: '#ff8000', // 2 issues
+    3: '#ff0000', // 3 or more issues
+} as const;
+
 /** Iterate over the elements of `values` in a cycle (forever). */
 export function* cycleIterator<T>(values: T[]) {
     let counter = 0;
