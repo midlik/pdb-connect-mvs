@@ -7,6 +7,7 @@ export interface IDataProvider {
     siftsMappings(pdbId: string): Promise<{ [source: string]: { [family: string]: DomainRecord[] } }>,
     siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }>,
     authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
+    experimentalMethods(pdbId: string): Promise<string[]>,
 }
 
 
@@ -142,6 +143,18 @@ export class ApiDataProvider implements IDataProvider {
             }
         }
         return coverages;
+    }
+
+    /** Get list of experimental methods for a PDB entry. */
+    async experimentalMethods(pdbId: string): Promise<string[]> {
+        const url = `${this.apiBaseUrl}/pdb/entry/summary/${pdbId}`;
+        const json = await this.get(url);
+        const methods: string[] = [];
+        for (const record of json[pdbId] ?? []) {
+            for (const method of record.experimental_method ?? []) {
+                methods.push(method);
+            }
+        } return methods;
     }
 }
 

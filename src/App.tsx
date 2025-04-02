@@ -137,6 +137,7 @@ function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: Snapsho
                 {s.name}
             </Button>
         )}
+        {snapshots.length === 0 && <i style={{ color: 'gray' }}>No views in this category.</i>}
     </div>;
 }
 

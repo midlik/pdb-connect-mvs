@@ -6,7 +6,8 @@ import { ANNOTATION_COLORS, MODRES_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
 import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, HexColor, smartFadedOpacity, StandardRepresentations, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
-import { chainSurroundings, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
+import { chainSurroundings, getBfactors, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
+import { ColorLists } from 'molstar/lib/mol-util/color/lists';
 
 
 type SnapshotSpecParams = {
@@ -17,9 +18,10 @@ type SnapshotSpecParams = {
     domain: { entry: string, source: string, familyId: string, entityId: string }, // source / family / entity / chain / instance
     ligand: { entry: string, compId: string, labelAsymId?: string },
     modres: { entry: string, compId: string },
+    bfactor: { entry: string },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor'] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -105,6 +107,13 @@ export class MVSSnapshotProvider {
                     out.push({ kind: 'modres', name: `Modified residue ${compId}`, params: { entry: entryId, compId } });
                 }
                 break;
+            case 'bfactor':
+                const experimentalMethods = await this.dataProvider.experimentalMethods(entryId);
+                const isXray = experimentalMethods.some(method => method.toLowerCase().includes('diffraction'));
+                if (isXray) {
+                    out.push({ kind: 'bfactor', name: `B-factor`, params: { entry: entryId } });
+                }
+                break;
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }
@@ -144,6 +153,9 @@ export class MVSSnapshotProvider {
                 break;
             case 'modres':
                 await this.loadModres(model, description, spec.params);
+                break;
+            case 'bfactor':
+                await this.loadBfactor(model, description, spec.params);
                 break;
         }
         description.push('---');
@@ -369,6 +381,38 @@ export class MVSSnapshotProvider {
             outDescription.push(`Showing in the deposited model.`);
         }
     }
+
+    private async loadBfactor(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['bfactor']) {
+        const struct = model.modelStructure();
+
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const components = applyStandardComponents(struct, { modifiedResidues });
+
+        const modelData = await this.getModel(params.entry);
+        const representations = applyStandardRepresentations(components, { skipComponents: ['polymer'] });
+        representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size physical
+
+        const bfactors = getBfactors(modelData);
+        const RAINBOW_COLORS = ColorLists.rainbow.list.map(entry => typeof entry === 'number' ? entry : entry[0]);
+        for (const repr of Object.values(representations)) {
+            // repr.colorFromSource({ schema: 'all_atomic', category_name: 'atom_site', field_name: 'B_iso_or_equiv' }); // this could work if MVS supported color_mapping param
+            for (const atom of bfactors) {
+                const color = interpolateColor(atom.bfactor / 100, RAINBOW_COLORS);
+                repr.color({ selector: { atom_id: atom.atom_id }, color: Color.toHexStyle(color) as HexColor });
+            }
+        }
+        outDescription.push(`## B-factor`);
+        outDescription.push(`Showing B-factor for the deposited model.`);
+        outDescription.push(`**This is the dumbest implementation ever and should under no circumstances never ever be used in real life! Its only purpose is to demonstrate shortcomings of the current MVS feature set.**`);
+    }
+}
+
+function interpolateColor(value: number, colors: Color[]) {
+    const n = colors.length - 1;
+    const bin = Math.floor(value * n);
+    if (bin === n) return colors[n];
+    const fractional = value * n - bin;
+    return Color.interpolate(colors[bin], colors[bin + 1], fractional);
 }
 
 function max<T, V>(array: T[], key: (elem: T) => V): T {

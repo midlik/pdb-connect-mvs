@@ -44,6 +44,7 @@ export const StardardComponents: { [type in StandardComponentType]?: (struct: Bu
 
 export interface StandardRepresentationsOptions {
     opacityFactor?: number,
+    skipComponents?: StandardComponentType[],
 }
 
 export type StandardRepresentationCollection = { [type in StandardRepresentationType]?: Builder.Representation };
@@ -135,6 +136,7 @@ export function applyStandardRepresentations(components: StandardComponentCollec
     let compType: StandardComponentType;
     let reprType: StandardRepresentationType;
     for (compType in components) {
+        if (options.skipComponents?.includes(compType)) continue;
         const component = components[compType];
         if (!component) continue;
         const representations = StandardRepresentations[compType]?.(component, options);
