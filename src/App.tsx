@@ -77,7 +77,7 @@ class AppModel {
             console.log(Molstar.PluginExtensions.mvs.MVSData.toPrettyString(snapshot))
             // await new Promise(resolve => setTimeout(resolve, 500));
             this.snapshot.next(snapshot);
-            await Molstar.PluginExtensions.mvs.loadMVS(this.viewer.plugin, snapshot, { replaceExisting: true });
+            await Molstar.PluginExtensions.mvs.loadMVS(this.viewer.plugin, snapshot, {});
             this.snapshotSpec.next(snapshotSpec);
         } finally {
             this.isBusy.next(false);

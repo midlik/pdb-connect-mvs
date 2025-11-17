@@ -25,3 +25,11 @@
 .Description {
   margin-left: 8px;
 }
+
+
+/* Override Molstar CSS */
+
+.msp-state-snapshot-viewport-controls,
+.msp-snapshot-description-wrapper {
+  display: none;
+}

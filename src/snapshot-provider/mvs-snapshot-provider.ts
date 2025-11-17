@@ -400,7 +400,7 @@ export class MVSSnapshotProvider {
         representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size physical
 
         const bfactors = getBfactors(modelData);
-        const RAINBOW_COLORS = ColorLists.rainbow.list.map(entry => typeof entry === 'number' ? entry : entry[0]);
+        const RAINBOW_COLORS = ColorLists['simple-rainbow'].list.map(entry => typeof entry === 'number' ? entry : entry[0]);
         for (const repr of Object.values(representations)) {
             // repr.colorFromSource({ schema: 'all_atomic', category_name: 'atom_site', field_name: 'B_iso_or_equiv' }); // this could work if MVS supported color_mapping param
             for (const atom of bfactors) {
@@ -512,6 +512,8 @@ All existing PDBImages states:
 - Modres show individual instances
 - Bfactor include tooltip
 - Validation - we will have multiple validation metrics
+  -> Sameer: use white instead of green, check color code for colorblindness
+- Sugar SNFG color - keep as is (by-chain / by-entity), for the future potentially add option to use SNFG colors
 
 - Prefer sticks over balls
 
