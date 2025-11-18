@@ -41,10 +41,15 @@ export const DEFAULT_COLORS = ENTITY_COLORS;
 
 export const VALIDATION_COLORS = {
     NOT_APPLICABLE: '#aaaaaa', // not applicable
-    0: '#00ff00', // 0 issues
-    1: '#ffff00', // 1 issues
-    2: '#ff8000', // 2 issues
-    3: '#ff0000', // 3 or more issues
+    0: '#ffffff', // 0 issues (PDBconnect currently uses #d4d5d4)
+    1: '#e5e501', // 1 issues
+    2: '#da6e03', // 2 issues
+    3: '#b2182b', // 3 or more issues
+    // Builtin Molstar theme colors:
+    // 0: '#00ff00', // 0 issues
+    // 1: '#ffff00', // 1 issues
+    // 2: '#ff8000', // 2 issues
+    // 3: '#ff0000', // 3 or more issues
 } as const;
 
 /** Iterate over the elements of `values` in a cycle (forever). */

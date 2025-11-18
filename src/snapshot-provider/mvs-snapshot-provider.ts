@@ -512,7 +512,7 @@ All existing PDBImages states:
 - Modres show individual instances
 - Bfactor include tooltip
 - Validation - we will have multiple validation metrics
-  -> Sameer: use white instead of green, check color code for colorblindness
+  + Sameer: use white instead of green, check color code for colorblindness
 - Sugar SNFG color - keep as is (by-chain / by-entity), for the future potentially add option to use SNFG colors
 
 - Prefer sticks over balls
@@ -524,6 +524,36 @@ New states:
 
 More ideas:
 - Custom highlight granularity in Molstar (to pick e.g. domains)
+
+Current PDBconnect states (Nov2025):
+- Summary - Preferred complex
+- Summary - Highlight entity (per polymer entity, only highlights 1 instance)
+- Summary - All ligands
+- Summary - Highlight ligand (per ligand entity, only highlight 1 instance)
+- Summary - Domains default (all white)
+- Summary - Domains per database (CATH, Pfam, SCOP)
+- Summary - Domain (per domain instance)
+- Summary - All modifications
+- Summary - Modification (per modified residue type, all instances)
+  - Ability to zoom individual instances
+  - 3llc, MSE 1 in chain A - zooming currently fails (non-modelled residue)
+- Model Quality - Issue count
+- Model Quality - Specific issue (per issue type)
+- Complexes - assembly (per assembly)
+- Macromolecules - Highlight entity (per entity per chain, same as on Summary tab?)
+  - Ability to focus residues and show their interactions
+- Ligand and Environments - Ligand interactions (per ligand instance)
+  - Ability to focus and highlight individual interactions
+- Domains - Domain (per domain instance)
+  - Colors don't match those on Summary tab - ask if intended
+- Text Annotations - Highlight entity (example 5cxt)
+  - Ability to focus residues and show their interactions
+- Citations - none
+
+(Summary tab - all shown on preferred assembly)
+(Model Quality tab - all shown on model)
+(Macromolecules tab - all shown on preferred assembly)
+(Interactivity!!! Highlighting on hover in menu)
 
 Questions:
 - We still don't have nstd_flag=. residues in modres API (e.g. 1gkt)

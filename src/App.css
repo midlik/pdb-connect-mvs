@@ -33,3 +33,7 @@
 .msp-snapshot-description-wrapper {
   display: none;
 }
+
+.msp-highlight-toast-wrapper {
+  pointer-events: none;
+}
