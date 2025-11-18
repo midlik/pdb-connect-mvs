@@ -58,8 +58,8 @@ export const StandardRepresentations: { [type in StandardComponentType]?: (comp:
     },
     branched(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            branchedCarbohydrate: applyOpacity(component.representation({ type: 'surface' }), 0.5 * (options.opacityFactor ?? 1)), // TODO add SNFG to MVS
-            branchedSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), 0.8 * (options.opacityFactor ?? 1)),
+            branchedCarbohydrate: applyOpacity(component.representation({ type: 'carbohydrate' }), options.opacityFactor), // TODO change size factor for SNFG to 1.75 in Molstar MVS extension
+            branchedSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), 0.3 * (options.opacityFactor ?? 1)),
         };
     },
     branchedLinkage(component: Builder.Component, options: StandardRepresentationsOptions) {

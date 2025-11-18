@@ -399,7 +399,7 @@ export class MVSSnapshotProvider {
         const components = applyStandardComponents(struct, { modifiedResidues });
 
         const representations = applyStandardRepresentations(components, { skipComponents: ['polymer'] });
-        representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size physical
+        representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size "uncertainty" (low prio)
 
         for (const repr of Object.values(representations)) {
             repr.colorFromSource({
@@ -523,7 +523,8 @@ All existing PDBImages states:
 - Ligand env - with controled interactions (toggle individual interaction types, there is an API for this), with volumes (adjustable isovalue)
 - Modres show individual instances
 - Bfactor include tooltip
-- Validation - we will have multiple validation metrics
+- Validation
+  + We will have multiple validation metrics
   + Sameer: use white instead of green, check color code for colorblindness
 - Sugar SNFG color - keep as is (by-chain / by-entity), for the future potentially add option to use SNFG colors
 
