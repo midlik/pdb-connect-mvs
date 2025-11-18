@@ -1,5 +1,6 @@
 import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
+import { ColorT, ComponentExpressionT, ComponentSelectorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
@@ -8,6 +9,9 @@ import { applyElementColors, applyEntityColors, applyStandardComponents, applySt
 import { IModelProvider } from './model-provider';
 import { chainSurroundings, getChainInfo, structurePolymerResidueCount } from './structure-info';
 
+
+const ValidationTypes = ['issue_count', 'bond_angles', 'clashes', 'sidechain_outliers', 'symm_clashes', 'planes'] as const;
+type ValidationType = (typeof ValidationTypes)[number];
 
 type SnapshotSpecParams = {
     // TODO think about how to deal with mandatory (hopefully exhaustible) params vs optional params
@@ -18,7 +22,7 @@ type SnapshotSpecParams = {
     ligand: { entry: string, compId: string, labelAsymId?: string },
     modres: { entry: string, compId: string },
     bfactor: { entry: string },
-    validation: { entry: string },
+    validation: { entry: string, validation_type: ValidationType },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
 const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation'] as const satisfies readonly SnapshotKind[];
@@ -115,7 +119,9 @@ export class MVSSnapshotProvider {
                 }
                 break;
             case 'validation':
-                out.push({ kind: 'validation', name: `Validation`, params: { entry: entryId } });
+                for (const validationType of ValidationTypes) {
+                    out.push({ kind: 'validation', name: `Validation (${validationType})`, params: { entry: entryId, validation_type: validationType } });
+                }
                 break;
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
@@ -419,49 +425,55 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
         const representations = applyStandardRepresentations(components, {});
-        const reprList = Object.values(representations);
+
+        const annotationHeader = `data:text/plain,
+        data_annotations
+        loop_
+        _annot.label_asym_id
+        _annot.label_seq_id
+        _annot.class
+        _annot.tooltip
+        . . 0 'OK'
+        `;
+        const annotationRows: string[] = [];
 
         const validationReport = await this.dataProvider.pdbeStructureQualityReport(params.entry);
         if (validationReport !== undefined) {
-            for (const repr of Object.values(representations)) {
-                repr.color({ color: VALIDATION_COLORS[0] }); // base color for residues without issues (not listed in the report)
-            }
             for (const molecule of validationReport.molecules) {
                 for (const chain of molecule.chains) {
                     for (const residue of chain.models[0].residues) {
-                        const issueCount = Math.min(residue.outlier_types.length, 3) as 0 | 1 | 2 | 3;
-                        for (const repr of reprList) {
-                            repr.color({
-                                selector: {
-                                    label_asym_id: chain.struct_asym_id,
-                                    label_seq_id: residue.residue_number,
-                                    auth_seq_id: Number(residue.author_residue_number),
-                                    pdbx_PDB_ins_code: residue.author_insertion_code,
-                                },
-                                color: VALIDATION_COLORS[issueCount],
-                            });
+                        const class_ = params.validation_type === 'issue_count' ? Math.min(residue.outlier_types.length, 3) : residue.outlier_types.includes(params.validation_type) ? 'y' : undefined;
+                        if (class_) {
+                            annotationRows.push(`${chain.struct_asym_id} ${residue.residue_number} ${class_} '${residue.outlier_types.join(', ')}'`);
                         }
                     }
                 }
             }
+            const annotationUri = annotationHeader + annotationRows.join(' ');
+            for (const repr of Object.values(representations)) {
+                repr.color({ color: VALIDATION_COLORS[0] }); // base color for residues without issues (not listed in the report)
+            }
+            representations.polymerCartoon?.colorFromUri({
+                uri: annotationUri, format: 'cif', schema: 'all_atomic', category_name: 'annot', field_name: 'class',
+                palette: { kind: 'categorical', colors: { '0': VALIDATION_COLORS[0], '1': VALIDATION_COLORS[1], '2': VALIDATION_COLORS[2], '3': VALIDATION_COLORS[3], 'y': VALIDATION_COLORS.HAS_ISSUE } },
+            });
+            struct.component().tooltip({ text: '<hr>Validation:' });
+            struct.tooltipFromUri({ uri: annotationUri, format: 'cif', schema: 'all_atomic', category_name: 'annot', field_name: 'tooltip' });
             outDescription.push(`## Validation`);
-            outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry outliers. Green - no outliers, yellow - one outlier, orange - two outliers, red - three or more outliers.`);
+            if (params.validation_type === 'issue_count') {
+                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry validation issue types. White - no issues, yellow - one issue type, orange - two issue types, red - three or more issue types.`);
+            } else {
+                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by presence of "${params.validation_type}" validation issues. White - no issue, red - has issues.`);
+            }
         } else {
             for (const repr of Object.values(representations)) {
                 repr.color({ color: VALIDATION_COLORS.NOT_APPLICABLE });
             }
+            struct.component().tooltip({ text: '<hr>Validation: Not available' });
             outDescription.push(`## Validation`);
             outDescription.push(`PDBe Structure Quality Report not available for this entry.`);
         }
     }
-}
-
-function interpolateColor(value: number, colors: Color[]) {
-    const n = colors.length - 1;
-    const bin = Math.floor(value * n);
-    if (bin === n) return colors[n];
-    const fractional = value * n - bin;
-    return Color.interpolate(colors[bin], colors[bin + 1], fractional);
 }
 
 function max<T, V>(array: T[], key: (elem: T) => V): T {
