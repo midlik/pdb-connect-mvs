@@ -182,14 +182,3 @@ function findChainIndexByLabelAsymId(model: Model, labelChainId: string): number
     }
     return -1;
 }
-
-export function getBfactors(model: Model) {
-    const nAtoms = model.atomicHierarchy.atoms._rowCount;
-    const out = [];
-    for (let iAtom = 0; iAtom < nAtoms; iAtom++) {
-        const atom_id = model.atomicConformation.atomId.value(iAtom);
-        const bfactor = model.atomicConformation.B_iso_or_equiv.value(iAtom);
-        out.push({ atom_id, bfactor });
-    }
-    return out;
-}

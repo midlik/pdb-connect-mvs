@@ -6,8 +6,7 @@ import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
 import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, HexColor, smartFadedOpacity, StandardRepresentations, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
-import { chainSurroundings, getBfactors, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
-import { ColorLists } from 'molstar/lib/mol-util/color/lists';
+import { chainSurroundings, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
 
 
 type SnapshotSpecParams = {
@@ -395,22 +394,25 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
 
-        const modelData = await this.getModel(params.entry);
         const representations = applyStandardRepresentations(components, { skipComponents: ['polymer'] });
         representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size physical
 
-        const bfactors = getBfactors(modelData);
-        const RAINBOW_COLORS = ColorLists['simple-rainbow'].list.map(entry => typeof entry === 'number' ? entry : entry[0]);
         for (const repr of Object.values(representations)) {
-            // repr.colorFromSource({ schema: 'all_atomic', category_name: 'atom_site', field_name: 'B_iso_or_equiv' }); // this could work if MVS supported color_mapping param
-            for (const atom of bfactors) {
-                const color = interpolateColor(atom.bfactor / 100, RAINBOW_COLORS);
-                repr.color({ selector: { atom_id: atom.atom_id }, color: Color.toHexStyle(color) as HexColor });
-            }
+            repr.colorFromSource({
+                schema: 'all_atomic', category_name: 'atom_site', field_name: 'B_iso_or_equiv',
+                palette: {
+                    kind: 'continuous',
+                    colors: 'Plasma',
+                    value_domain: [0, 120], // TODO ask about reasonable cutoff for Bfactor
+                    overflow_color: '#eff821', // last color from Plasma
+                },
+            });
         }
+        struct.component().tooltip({ text: '<hr>B-factor:' });
+        struct.tooltipFromSource({ schema: 'all_atomic', category_name: 'atom_site', field_name: 'B_iso_or_equiv' });
+
         outDescription.push(`## B-factor`);
-        outDescription.push(`Showing B-factor for the deposited model.`);
-        outDescription.push(`**This is the dumbest implementation ever and should under no circumstances never ever be used in real life! Its only purpose is to demonstrate shortcomings of the current MVS feature set.**`);
+        outDescription.push(`Showing B-factor for the deposited model, colored by Plasma color scheme (0 = blue, 120 = yellow). Values above 120 are clipped.`);
     }
 
     private async loadValidation(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['validation']) {
@@ -532,7 +534,7 @@ Current PDBconnect states (Nov2025):
 - Summary - Highlight ligand (per ligand entity, only highlight 1 instance)
 - Summary - Domains default (all white)
 - Summary - Domains per database (CATH, Pfam, SCOP)
-- Summary - Domain (per domain instance)
+- Summary - Domain (per domain instance) (example 5cim)
 - Summary - All modifications
 - Summary - Modification (per modified residue type, all instances)
   - Ability to zoom individual instances

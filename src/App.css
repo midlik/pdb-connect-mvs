@@ -10,6 +10,7 @@
   width: 722px;
   height: 402px;
   padding: 8px;
+  z-index: 1;
 }
 
 .ControlsWindow {
