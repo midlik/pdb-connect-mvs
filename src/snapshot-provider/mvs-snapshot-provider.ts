@@ -4,9 +4,9 @@ import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, HexColor, smartFadedOpacity, StandardRepresentations, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
-import { chainSurroundings, getChainInfo, getElementsInEntities, structurePolymerResidueCount } from './structure-info';
+import { chainSurroundings, getChainInfo, structurePolymerResidueCount } from './structure-info';
 
 
 type SnapshotSpecParams = {
@@ -245,7 +245,7 @@ export class MVSSnapshotProvider {
         const entityComponents = applyStandardComponentsForEntity(struct, params.entityId, entityType, { modifiedResidues });
         const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1 });
         for (const repr of Object.values(entityRepresentations)) {
-            repr.color({ color: entityColors[params.entityId] as HexColor });
+            repr.color({ color: entityColors[params.entityId] });
         }
 
         outDescription.push(`## Entity ${params.entityId}`);
@@ -288,7 +288,7 @@ export class MVSSnapshotProvider {
             const domainComp = struct.component({ selector: domain.chunks.map(chunk => ({ label_asym_id: chunk.chainId, beg_label_seq_id: chunk.startResidue, end_label_seq_id: chunk.endResidue })) });
             const modresInDomain = modifiedResidues.filter(r => r.labelAsymId === domain.chunks[0].chainId && domain.chunks.some(dom => (dom.startResidue ?? Infinity) <= r.labelSeqId && r.labelSeqId <= (dom.endResidue ?? -Infinity)));
             const modresComp = struct.component({ selector: modresInDomain.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) });
-            const color = (domainColors[domain.id] ?? Color.toHexStyle(ANNOTATION_COLORS[0])) as HexColor;
+            const color = (domainColors[domain.id] ?? ANNOTATION_COLORS[0]);
             domainComp.representation({ type: 'cartoon' }).color({ color });
             modresComp.representation({ type: 'ball_and_stick' }).color({ color });
         }
@@ -334,16 +334,14 @@ export class MVSSnapshotProvider {
         const ligandComp = struct.component({ selector: { label_asym_id: labelAsymId } });
 
         const entityColors = getEntityColors(entities);
-        const elementsInEntities = getElementsInEntities(modelData); // TODO consider just using all elements from the model
-        const allElements = Array.from(new Set(Object.values(elementsInEntities).flat())).sort();
-        const ligandRepr = ligandComp.representation({ type: 'ball_and_stick' }).color({ color: entityColors[entityRecord.id] as HexColor });
-        applyElementColors(ligandRepr, elementsInEntities[entityRecord.id]);
+        const ligandRepr = ligandComp.representation({ type: 'ball_and_stick' }).color({ color: entityColors[entityRecord.id] });
+        applyElementColors(ligandRepr);
 
         const LIGAND_ENVIRONMENT_RADIUS = 5;
         const environmentSelector = chainSurroundings(modelData, labelAsymId, LIGAND_ENVIRONMENT_RADIUS);
         const environmentComp = struct.component({ selector: environmentSelector });
         const environmentRepr = environmentComp.representation({ type: 'ball_and_stick', size_factor: 0.5 }).color({ color: 'gray' });
-        applyElementColors(environmentRepr, allElements);
+        applyElementColors(environmentRepr);
         environmentComp.focus();
 
         const chainInfo = getChainInfo(modelData);
@@ -376,7 +374,7 @@ export class MVSSnapshotProvider {
         });
         const modresRepr = modresComp.representation({ type: 'ball_and_stick' });
         const modresColors = getModresColors(modifiedResidues);
-        modresRepr.color({ color: modresColors[params.compId] as HexColor ?? MODRES_COLORS[0] });
+        modresRepr.color({ color: modresColors[params.compId] ?? MODRES_COLORS[0] });
 
         const modresName = modifiedResidues.find(r => r.compoundId === params.compId)?.compoundName;
         outDescription.push(`## Modified residue ${params.compId}`);

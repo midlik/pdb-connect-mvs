@@ -76,23 +76,6 @@ function getChainPolymerResidueCounts(model: Model) {
     return chainSizes;
 }
 
-export function getElementsInEntities(model: Model) {
-    const elementSets: { [entityId: string]: Set<string> } = {};
-    const h = model.atomicHierarchy;
-    const nAtoms = h.atoms._rowCount;
-    for (let iAtom = 0; iAtom < nAtoms; iAtom++) {
-        const element = h.atoms.type_symbol.value(iAtom);
-        const iChain = h.chainAtomSegments.index[iAtom];
-        const entityId = h.chains.label_entity_id.value(iChain);
-        (elementSets[entityId] ??= new Set()).add(element);
-    }
-    const out: { [entityId: string]: string[] } = {};
-    for (const entityId in elementSets) {
-        out[entityId] = Array.from(elementSets[entityId]).sort();
-    }
-    return out;
-}
-
 /** Select surroundings of a chain in the model, as whole residues. */
 export function chainSurroundings(model: Model, labelChainId: string, radius: number) {
     const h = model.atomicHierarchy;

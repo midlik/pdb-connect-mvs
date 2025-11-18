@@ -1,4 +1,5 @@
 import * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
+import { ColorT, HexColorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { IonNames } from 'molstar/lib/mol-model/structure/model/types/ions';
 import { LipidNames } from 'molstar/lib/mol-model/structure/model/types/lipids';
 import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/saccharides';
@@ -148,27 +149,17 @@ export function applyStandardRepresentations(components: StandardComponentCollec
     return out;
 }
 
-export type HexColor = `#{string}`; // for passing string colors to MVS
-
-export function applyEntityColors(repr: Builder.Representation, colors: { [entityId: string]: string }) {
+export function applyEntityColors(repr: Builder.Representation, colors: { [entityId: string]: ColorT }) {
     for (const entityId in colors) {
         repr.color({
             selector: { label_entity_id: entityId },
-            color: colors[entityId] as HexColor,
+            color: colors[entityId],
         });
     }
 }
 
-const UKNOWN_ELEMENT_COLOR = ElementSymbolColors.UUH;
-
-export function applyElementColors(repr: Builder.Representation, elements: string[]) {
-    for (const element of elements) {
-        if (element === 'C') continue; // keep underlying color for carbons
-        repr.color({
-            selector: { type_symbol: element },
-            color: Color.toHexStyle(ElementSymbolColors[element as keyof typeof ElementSymbolColors] ?? UKNOWN_ELEMENT_COLOR) as HexColor,
-        });
-    }
+export function applyElementColors(repr: Builder.Representation) {
+    repr.colorFromSource({ schema: 'all_atomic', category_name: 'atom_site', field_name: 'type_symbol', palette: { kind: 'categorical', colors: 'ElementSymbol' } });
 }
 
 export function applyOpacity(repr: Builder.Representation, opacity: number | undefined) {
@@ -176,17 +167,17 @@ export function applyOpacity(repr: Builder.Representation, opacity: number | und
     else return repr;
 }
 
-export function getEntityColors(entities: { [entityId: string]: EntityRecord }): { [entityId: string]: string } {
+export function getEntityColors(entities: { [entityId: string]: EntityRecord }): { [entityId: string]: ColorT } {
     const polymerColorIterator = cycleIterator(ENTITY_COLORS);
     const ligandColorIterator = cycleIterator(LIGAND_COLORS);
-    const waterColor = ElementSymbolColors.O;
+    const waterColor = Color.toHexStyle(ElementSymbolColors.O) as ColorT;
 
-    const out: { [entityId: string]: string } = {};
+    const out: { [entityId: string]: ColorT } = {};
 
     for (const entityId of Object.keys(entities)) {
         const entity = entities[entityId];
         const color = entity.type === 'water' ? waterColor : entity.type === 'bound' ? ligandColorIterator.next().value! : polymerColorIterator.next().value!;
-        out[entityId] = Color.toHexStyle(color);
+        out[entityId] = color;
         // TODO assign fixed colors to single-element ligands? (like in PDBImages)
     }
     return out;
@@ -194,12 +185,12 @@ export function getEntityColors(entities: { [entityId: string]: EntityRecord }):
 
 export function getDomainColors(domains: { [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }) {
     const colorIterator = cycleIterator(ANNOTATION_COLORS);
-    const out: { [domainId: string]: string } = {};
+    const out: { [domainId: string]: ColorT } = {};
     for (const [src, srcDomains] of Object.entries(domains)) {
         for (const [fam, famDomains] of Object.entries(srcDomains)) {
             for (const [entity, entityDomains] of Object.entries(famDomains)) {
                 for (const domain of entityDomains) {
-                    out[domain.id] = Color.toHexStyle(colorIterator.next().value!);
+                    out[domain.id] = colorIterator.next().value!;
                 }
             }
         }
@@ -209,9 +200,9 @@ export function getDomainColors(domains: { [source: string]: { [family: string]:
 
 export function getModresColors(modifiedResidues: ModifiedResidueRecord[]) {
     const colorIterator = cycleIterator(MODRES_COLORS);
-    const out: { [compId: string]: string } = {};
+    const out: { [compId: string]: HexColorT } = {};
     for (const modres of uniqueModresCompIds(modifiedResidues)) {
-        out[modres] = Color.toHexStyle(colorIterator.next().value!);
+        out[modres] = colorIterator.next().value! as HexColorT;
     }
     return out;
 }
@@ -258,27 +249,3 @@ export function smartFadedOpacity(nPolymerResidues: number, params: typeof SMART
     const theoreticalOpacity = 1 - (1 - targetOpacity) ** (1 / (n0 + nPolymerResidues) ** (1 / 3));
     return baseOpacity + theoreticalOpacity;
 }
-
-
-export function objForEach<T extends Record<string, unknown>>(obj: T, action: (...args: Pair<T, keyof T>) => void): void {
-    for (const key in obj) {
-        (action as any)(key, obj[key]);
-    }
-}
-
-const a = { x: 1, y: 2, name: 'hello' };
-objForEach(a, (key, value) => {
-    if (key === 'x') {
-        value + 1;
-        // value[0];
-    }
-    if (key === 'name') {
-        // Math.round(value);
-        value[0];
-    }
-})
-
-type Pair<TObj extends Record<string, unknown>, TKey extends keyof TObj> =
-    TKey extends keyof TObj
-    ? [key: TKey, value: TObj[TKey]]
-    : never; // extends clause needed to create discriminated union type properly

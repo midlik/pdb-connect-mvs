@@ -4,6 +4,7 @@
  * @author Adam Midlik <midlik@gmail.com>
  */
 
+import { ColorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { Mat3, Vec3 } from 'molstar/lib/mol-math/linear-algebra';
 import { Color, ColorListEntry } from 'molstar/lib/mol-util/color/color';
 import { ColorLists } from 'molstar/lib/mol-util/color/lists';
@@ -24,13 +25,13 @@ const PASTEL = [0x66c5cc, 0xf6cf71, 0xf89c74, 0xdcb0f2, 0x87c55f, 0x9eb9f3, 0xfe
 
 
 /** A set of non-gray colors starting with relatively decent colors, for polymer entities */
-export const ENTITY_COLORS = [...DARK2, ...BOLD, ...PASTEL, ...SET2_SAFE];
+export const ENTITY_COLORS = [...DARK2, ...BOLD, ...PASTEL, ...SET2_SAFE].map(Color.toHexStyle) as ColorT[];
 
 /** A set of non-gray colors starting with pastel colors, for ligands (same as for polymers but drawn from the end) */
 export const LIGAND_COLORS = ENTITY_COLORS.slice().reverse();
 
 /** A set of non-gray colors starting with brighter colors, for highlighting domains */
-export const ANNOTATION_COLORS = [...SET1, ...VIVID];
+export const ANNOTATION_COLORS = [...SET1, ...VIVID].map(Color.toHexStyle) as ColorT[];
 
 /** A set of non-gray colors starting with brighter colors, for modified residues (same as for domains but drawn from the end) */
 export const MODRES_COLORS = ANNOTATION_COLORS.slice().reverse();
