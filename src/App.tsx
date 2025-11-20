@@ -140,8 +140,8 @@ function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: Snapsho
 
     return <div className='ViewButtons'>
         {snapshots.map(s =>
-            <Button key={s.name} variant={s.name === snapshotName ? 'contained' : 'outlined'} style={{ margin: 2 }}
-                disabled={busy} onClick={() => model.loadSnapshot(s)}>
+            <Button key={s.name} variant={s.name === snapshotName ? 'contained' : 'outlined'} style={{ margin: 2, textTransform: 'none' }}
+                disabled={busy} onClick={() => model.loadSnapshot(s)} >
                 {s.name}
             </Button>
         )}

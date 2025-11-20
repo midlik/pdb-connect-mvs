@@ -28,9 +28,21 @@ type SnapshotSpecParams = {
         /** Assembly ID (`undefined` for preferred assembly) */
         assemblyId?: string,
     },
+    pdbconnect_summary_macromolecule: {
+        entry: string,
+        /** Assembly ID (`undefined` for preferred assembly) */
+        assemblyId?: string,
+        entityId: string,
+        /** `undefined` for showing first instance of the entity */
+        labelAsymId?: string,
+    },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation', 'pdbconnect_summary_default'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = [
+    'entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation',
+    'pdbconnect_summary_default',
+    'pdbconnect_summary_macromolecule',
+] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -148,6 +160,19 @@ export class MVSSnapshotProvider {
                 }
                 break;
             }
+            case 'pdbconnect_summary_macromolecule': {
+                const entities = await this.dataProvider.entities(entryId);
+                for (const entityId in entities) {
+                    const entity = entities[entityId];
+                    if (MacromoleculeTypes.has(entity.type)) {
+                        out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: undefined, entityId: entityId, labelAsymId: undefined } });
+                        for (const labelAsymId of entity.chains) {
+                            out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: undefined, entityId: entityId, labelAsymId: labelAsymId } });
+                        }
+                    }
+                }
+                break;
+            }
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }
@@ -196,6 +221,9 @@ export class MVSSnapshotProvider {
                 break;
             case 'pdbconnect_summary_default':
                 await this.loadPdbconnectSummaryDefault(model, description, spec.params);
+                break;
+            case 'pdbconnect_summary_macromolecule':
+                await this.loadPdbconnectSummaryMacromolecule(model, description, spec.params);
                 break;
         }
         description.push('---');
@@ -283,7 +311,7 @@ export class MVSSnapshotProvider {
         }
 
         outDescription.push(`## Entity ${params.entityId}`);
-        const entityName = entities[params.entityId].names[0];
+        const entityName = entities[params.entityId].name;
         outDescription.push((entityName ? `__${entityName}__` : '*Entity name not available*') + ` (${entityType})`);
         if (theAssembly === preferredAssembly) {
             outDescription.push(`Showing in assembly ${theAssembly} (preferred).`);
@@ -382,7 +410,7 @@ export class MVSSnapshotProvider {
         const authAsymId = chainInfo[labelAsymId].authChainId;
 
         outDescription.push(`## Ligand ${params.compId}`);
-        outDescription.push(`Showing ligand **${entityRecord.names}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}] in the deposited model.`);
+        outDescription.push(`Showing ligand **${entityRecord.name}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}] in the deposited model.`);
     }
 
     private async loadModres(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['modres']) {
@@ -532,6 +560,10 @@ export class MVSSnapshotProvider {
         outDescription.push(`This is complex (assembly) ${displayedAssemblyId}.`);
     }
 
+    private async loadPdbconnectSummaryMacromolecule(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
+        throw new Error('NotImplementedError');
+    }
+
     private async getPreferredAssembly(entryId: string) {
         const assemblies = await this.dataProvider.assemblies(entryId);
         const preferred = assemblies.find(ass => ass.preferred);
@@ -539,6 +571,24 @@ export class MVSSnapshotProvider {
         return preferred;
     }
 }
+
+/** Set of entity types as reported by the `molecules` API, corresponding to macromolecules */
+const MacromoleculeTypes = new Set([
+    'polypeptide(D)', // e.g. 7pcj
+    'polypeptide(L)', // e.g. 7pcj
+    'polydeoxyribonucleotide', // e.g. 7v6v
+    'polyribonucleotide', // e.g. 1y26
+    'polydeoxyribonucleotide/polyribonucleotide hybrid', // e.g. 5vze
+    'peptide nucleic acid', // e.g. 2kvj
+    'cyclic-pseudo-peptide', // not found in mmCIFs, but listed in controlled vocabulary for _entity_poly.type 
+    'other', // maybe not found in mmCIFs, but listed in controlled vocabulary for _entity_poly.type
+    'carbohydrate polymer', // found in API
+]);
+// Examples (zgrep in PDB mirror from 2023-05-04):
+// - peptide nucleic acid :
+//   - 2kvj
+//   - wrongly annotated: 1pdt entity 2, 1nr8 entity 2, 2k4g entity 1, 1rru entity 1, 1pup entity 1, 1hzs entity 1, 1qpy entity 1, 1xj9 entity 1
+//   - 7kzl entity 2 whuuut? (annotated as polypeptide(L))
 
 
 function max<T, V>(array: T[], key: (elem: T) => V): T {
