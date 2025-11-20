@@ -23,6 +23,10 @@
   border: 1px solid #ccc;
 }
 
+.ViewButtons {
+  margin-block: 16px;
+}
+
 .Description {
   margin-left: 8px;
 }

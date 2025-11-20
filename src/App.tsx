@@ -10,7 +10,7 @@ import './App.css';
 import { ApiDataProvider } from './snapshot-provider/data-provider';
 import { MolstarModelProvider } from './snapshot-provider/model-provider';
 import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, MVSSnapshotProviderConfig, SnapshotSpec } from './snapshot-provider/mvs-snapshot-provider';
-import { Checkbox, FormControlLabel, FormGroup } from '@mui/material';
+import { Checkbox, FormControl, FormControlLabel, FormGroup, InputLabel, MenuItem, Select } from '@mui/material';
 
 
 type Molstar = typeof import('molstar/lib/apps/viewer');
@@ -101,27 +101,31 @@ function ViewerWindow({ model }: { model: AppModel }) {
 }
 
 function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }) {
-    const [onlyPdbconnect, setOnlyPdbconnect] = useState<boolean>(true);
     const [snapshots, setSnapshots] = useState<SnapshotSpec[]>([]);
     useEffect(() => {
         model.mvsProvider.listSnapshots(entryId).then(setSnapshots);
     }, [model, entryId]);
 
-    const kinds = model.mvsProvider.listSnapshotKinds().filter(kind => !onlyPdbconnect || kind.startsWith('pdbconnect'));
-    console.log('kinds', kinds)
-    const [tab, setTab] = React.useState(kinds[0]);
+    const kinds = model.mvsProvider.listSnapshotKinds();
+    const [tab, setTab] = React.useState<string>('pdbconnect_summary_default');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
-        <FormControlLabel control={<Checkbox checked={onlyPdbconnect} onChange={(e, checked) => setOnlyPdbconnect(checked)} />} label="Only PDBconnect" />
-        <TabContext value={tab} >
-            <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-                {kinds.map(kind => <Tab label={kind.replace('pdbconnect_', '')} value={kind} key={kind} style={{ padding: 2 }} />)}
-            </Tabs>
-            {kinds.map(kind => <TabPanel value={kind} style={{ paddingBlock: 16, paddingInline: 4 }} key={kind}>
-                <ViewButtons model={model} snapshots={snapshots.filter(s => s.kind === tab)} />
-            </TabPanel>)}
-        </TabContext>
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', margin: 6 }}>
+            View&nbsp;category:&emsp;
+            <Select fullWidth
+                labelId="view-category-select-label"
+                id="view-category-select"
+                value={tab}
+                label="Age"
+                onChange={(e, value) => setTab(e.target.value)}
+                style={{ height: '2.5em' }}
+            >
+                {kinds.map(kind => <MenuItem value={kind}>{kind}</MenuItem>)}
+            </Select>
+        </div>
+        <ViewButtons model={model} snapshots={snapshots.filter(s => s.kind === tab)} />
+        <hr/>
         <Description model={model} />
     </div>;
 }
