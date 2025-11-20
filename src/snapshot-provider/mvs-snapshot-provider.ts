@@ -5,7 +5,7 @@ import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
 import { chainSurroundings, getChainInfo, structurePolymerResidueCount } from './structure-info';
 
@@ -23,9 +23,14 @@ type SnapshotSpecParams = {
     modres: { entry: string, compId: string },
     bfactor: { entry: string },
     validation: { entry: string, validation_type: ValidationType },
+    pdbconnect_summary_default: {
+        entry: string,
+        /** Assembly ID (`undefined` for preferred assembly) */
+        assemblyId?: string,
+    },
 }
 type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation'] as const satisfies readonly SnapshotKind[];
+const SnapshotKinds = ['entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation', 'pdbconnect_summary_default'] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
@@ -35,6 +40,7 @@ export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
 
 /** Level of opacity used for domain and ligand images */
 const FADED_OPACITY = 0.5;
+
 
 export class MVSSnapshotProvider {
     constructor(
@@ -62,23 +68,26 @@ export class MVSSnapshotProvider {
         if (kind === undefined) return this.listAllSnapshots(entryId);
         const out: SnapshotSpec[] = [];
         switch (kind) {
-            case 'entry':
+            case 'entry': {
                 out.push({ kind: 'entry', name: `Entry`, params: { entry: entryId } });
                 break;
-            case 'assembly':
+            }
+            case 'assembly': {
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 for (const ass of assemblies) {
                     out.push({ kind: 'assembly', name: `Assembly ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
                 }
                 break;
-            case 'entity':
+            }
+            case 'entity': {
                 const entities = await this.dataProvider.entities(entryId);
                 for (const ent in entities) {
                     if (entities[ent].type === 'water') continue;
                     out.push({ kind: 'entity', name: `Entity ${ent}`, params: { entry: entryId, entityId: ent, assemblyId: undefined } });
                 }
                 break;
-            case 'domain':
+            }
+            case 'domain': {
                 const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
                 for (const source in domains) {
                     const srcDomains = domains[source];
@@ -95,34 +104,50 @@ export class MVSSnapshotProvider {
                     }
                 }
                 break;
-            case 'ligand':
-                const entities2 = await this.dataProvider.entities(entryId); // thank you switch for not letting me have the same var name again
-                for (const ent in entities2) {
-                    const entityRecord = entities2[ent];
+            }
+            case 'ligand': {
+                const entities = await this.dataProvider.entities(entryId); // thank you switch for not letting me have the same var name again
+                for (const ent in entities) {
+                    const entityRecord = entities[ent];
                     if (entityRecord.type === 'bound' && entityRecord.compIds.length === 1) {
                         const compId = entityRecord.compIds[0];
                         out.push({ kind: 'ligand', name: `Ligand ${compId}`, params: { entry: entryId, compId, labelAsymId: undefined } });
                     }
                 }
                 break;
-            case 'modres':
+            }
+            case 'modres': {
                 const modifiedResidues = await this.dataProvider.modifiedResidues(entryId);
                 for (const compId of uniqueModresCompIds(modifiedResidues)) {
                     out.push({ kind: 'modres', name: `Modified residue ${compId}`, params: { entry: entryId, compId } });
                 }
                 break;
-            case 'bfactor':
+            }
+            case 'bfactor': {
                 const experimentalMethods = await this.dataProvider.experimentalMethods(entryId);
                 const isXray = experimentalMethods.some(method => method.toLowerCase().includes('diffraction'));
                 if (isXray) {
                     out.push({ kind: 'bfactor', name: `B-factor`, params: { entry: entryId } });
                 }
                 break;
-            case 'validation':
+            }
+            case 'validation': {
                 for (const validationType of ValidationTypes) {
                     out.push({ kind: 'validation', name: `Validation (${validationType})`, params: { entry: entryId, validation_type: validationType } });
                 }
                 break;
+            }
+            case 'pdbconnect_summary_default': {
+                const assemblies = await this.dataProvider.assemblies(entryId);
+                const preferred = assemblies.find(ass => ass.preferred);
+                if (preferred) {
+                    out.push({ kind: 'pdbconnect_summary_default', name: `Preferred complex`, params: { entry: entryId, assemblyId: undefined } });
+                }
+                for (const ass of assemblies) {
+                    out.push({ kind: 'pdbconnect_summary_default', name: `Complex ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
+                }
+                break;
+            }
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }
@@ -169,6 +194,9 @@ export class MVSSnapshotProvider {
             case 'validation':
                 await this.loadValidation(model, description, spec.params);
                 break;
+            case 'pdbconnect_summary_default':
+                await this.loadPdbconnectSummaryDefault(model, description, spec.params);
+                break;
         }
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
@@ -182,7 +210,7 @@ export class MVSSnapshotProvider {
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
-        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
+        const representations = applyStandardRepresentations(components, { opacityFactor: 1, skipComponents: ['water'] });
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
@@ -201,7 +229,7 @@ export class MVSSnapshotProvider {
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
-        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
+        const representations = applyStandardRepresentations(components, { opacityFactor: 1, skipComponents: ['water'] });
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
@@ -238,7 +266,7 @@ export class MVSSnapshotProvider {
 
         const modelData = await this.getModel(params.entry);
         const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, theAssembly));
-        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
+        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity, skipComponents: ['water'] });
 
         for (const repr of Object.values(representations)) {
             repr.color({ color: 'gray' });
@@ -249,7 +277,7 @@ export class MVSSnapshotProvider {
         const entityType = decideEntityType(entities[params.entityId]);
 
         const entityComponents = applyStandardComponentsForEntity(struct, params.entityId, entityType, { modifiedResidues });
-        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1 });
+        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1, skipComponents: ['water'] });
         for (const repr of Object.values(entityRepresentations)) {
             repr.color({ color: entityColors[params.entityId] });
         }
@@ -286,7 +314,7 @@ export class MVSSnapshotProvider {
         const entitiesInfo = await this.dataProvider.entities(params.entry);
         const shownPolymerLabelChain = Object.keys(chainInfo).find(c => chainInfo[c].authChainId === shownAuthChain && decideEntityType(entitiesInfo[chainInfo[c].entityId]) === 'polymer');
         const components = applyStandardComponentsForChains(struct, chainsToShow, chainInfo, entitiesInfo, { modifiedResidues });
-        const representations = applyStandardRepresentations(components, { opacityFactor: FADED_OPACITY })
+        const representations = applyStandardRepresentations(components, { opacityFactor: FADED_OPACITY, skipComponents: ['water'] })
         for (const repr of Object.values(representations)) {
             repr.color({ color: 'gray' });
         }
@@ -332,7 +360,7 @@ export class MVSSnapshotProvider {
 
         const modelData = await this.getModel(params.entry);
         const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, undefined));
-        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
+        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity, skipComponents: ['water'] });
 
         for (const repr of Object.values(representations)) {
             repr.color({ color: 'gray' });
@@ -369,7 +397,7 @@ export class MVSSnapshotProvider {
 
         const modelData = await this.getModel(params.entry);
         const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, preferredAssembly));
-        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
+        const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity, skipComponents: ['water'] });
 
         for (const repr of Object.values(representations)) {
             repr.color({ color: 'gray' });
@@ -398,7 +426,7 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
 
-        const representations = applyStandardRepresentations(components, { skipComponents: ['polymer'] });
+        const representations = applyStandardRepresentations(components, { skipComponents: ['polymer', 'water'] });
         representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size "uncertainty" (low prio)
 
         for (const repr of Object.values(representations)) {
@@ -424,7 +452,7 @@ export class MVSSnapshotProvider {
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
-        const representations = applyStandardRepresentations(components, {});
+        const representations = applyStandardRepresentations(components, { skipComponents: ['water'] });
 
         const annotationHeader = `data:text/plain,
         data_annotations
@@ -474,7 +502,44 @@ export class MVSSnapshotProvider {
             outDescription.push(`PDBe Structure Quality Report not available for this entry.`);
         }
     }
+
+    private async loadPdbconnectSummaryDefault(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
+        const displayedAssemblyId = params.assemblyId ?? (await this.getPreferredAssembly(params.entry)).assemblyId;
+        const struct = model.assemblyStructure({ assembly_id: displayedAssemblyId });
+        struct.component().focus();
+
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const components = applyStandardComponents(struct, { modifiedResidues });
+        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
+
+        const entities = await this.dataProvider.entities(params.entry);
+        const entityColors = getEntityColors(entities);
+        for (const repr of Object.values(representations)) {
+            applyEntityColors(repr, entityColors);
+        }
+        for (const repr of atomicRepresentations(representations)) {
+            applyElementColors(repr);
+        }
+        // TODO only apply entity colors to polymers? check with Marcelo
+        // TODO ensure default Molstar show-environment behavior uses either entity colors or all-gray -> PDBeMolstar does it somehow but now idea how (+ ideally increase bubble size)
+        // TODO ball_and_stick size theme physical?
+
+        if (params.assemblyId === undefined) {
+            outDescription.push(`## Preferred complex`);
+        } else {
+            outDescription.push(`## Complex ${displayedAssemblyId}`);
+        }
+        outDescription.push(`This is complex (assembly) ${displayedAssemblyId}.`);
+    }
+
+    private async getPreferredAssembly(entryId: string) {
+        const assemblies = await this.dataProvider.assemblies(entryId);
+        const preferred = assemblies.find(ass => ass.preferred);
+        if (preferred === undefined) throw new Error(`Could not find preferred assembly for entry ${entryId}`);
+        return preferred;
+    }
 }
+
 
 function max<T, V>(array: T[], key: (elem: T) => V): T {
     let argMax = array[0];
@@ -530,14 +595,6 @@ All existing PDBImages states:
 
 - Prefer sticks over balls
 
-New states:
-- All ligands highlighted
-- Interfaces (surface bubble + interacting residue sticks)
-- PTMs maybe in the far future
-
-More ideas:
-- Custom highlight granularity in Molstar (to pick e.g. domains)
-
 Current PDBconnect states (Nov2025):
 - Summary - Preferred complex
 - Summary - Highlight entity (per polymer entity, only highlights 1 instance)
@@ -557,6 +614,7 @@ Current PDBconnect states (Nov2025):
   - Ability to focus residues and show their interactions
 - Ligand and Environments - Ligand interactions (per ligand instance)
   - Ability to focus and highlight individual interactions
+  - Genevieve's suggestions: use Fog (gives better depth perception)
 - Domains - Domain (per domain instance)
   - Colors don't match those on Summary tab - ask if intended
 - Text Annotations - Highlight entity (example 5cxt)
@@ -567,6 +625,13 @@ Current PDBconnect states (Nov2025):
 (Model Quality tab - all shown on model)
 (Macromolecules tab - all shown on preferred assembly)
 (Interactivity!!! Highlighting on hover in menu)
+
+New states:
+- Interfaces (surface bubble + interacting residue sticks)
+- PTMs maybe in the far future
+
+More ideas:
+- Custom highlight granularity in Molstar (to pick e.g. domains)
 
 Questions:
 - We still don't have nstd_flag=. residues in modres API (e.g. 1gkt)

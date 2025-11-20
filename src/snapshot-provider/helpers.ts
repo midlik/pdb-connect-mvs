@@ -24,22 +24,25 @@ export interface StandardComponentsOptions {
 
 export type StandardComponentCollection = { [type in StandardComponentType]?: Builder.Component };
 
-export const StardardComponents: { [type in StandardComponentType]?: (struct: Builder.Structure, options: StandardComponentsOptions) => Builder.Component } = {
+export const StardardComponents: { [type in StandardComponentType]?: (struct: Builder.Structure, options: StandardComponentsOptions) => Builder.Component | undefined } = {
     polymer(structure: Builder.Structure) {
-        return structure.component({ selector: 'polymer' });
+        return structure.component({ selector: 'polymer', ref: 'component_polymer' });
     },
     branched(structure: Builder.Structure) {
-        return structure.component({ selector: 'branched' });
+        return structure.component({ selector: 'branched', ref: 'component_branched' });
     },
     branchedLinkage: undefined, // TODO select sugar linkage somehow if we want it (const sugarLinkageSticks = await this.nodes.branchedLinkage?.makeBallsAndSticks(options, ['branchedLinkageSticks']);)
     ligand(structure: Builder.Structure) {
-        return structure.component({ selector: 'ligand' });
+        return structure.component({ selector: 'ligand', ref: 'component_ligand' });
     },
     ion(structure: Builder.Structure) {
-        return structure.component({ selector: 'ion' });
+        return structure.component({ selector: 'ion', ref: 'component_ion' });
     },
     nonstandard(structure: Builder.Structure, options: StandardComponentsOptions) {
-        return structure.component({ selector: options.modifiedResidues.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) });
+        return structure.component({ selector: options.modifiedResidues.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })), ref: 'component_nonstandard' });
+    },
+    water(structure: Builder.Structure) {
+        return structure.component({ selector: 'water', ref: 'component_water' });
     },
 };
 
@@ -84,7 +87,7 @@ export const StandardRepresentations: { [type in StandardComponentType]?: (comp:
     },
     water(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            waterSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+            waterSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: 0.5 }), 0.5 * (options.opacityFactor ?? 1)),
         };
     },
 };
@@ -149,13 +152,14 @@ export function applyStandardRepresentations(components: StandardComponentCollec
     return out;
 }
 
+export function atomicRepresentations(reprs: StandardRepresentationCollection): Builder.Representation[] {
+    return [reprs.ligandSticks, reprs.ionSticks, reprs.nonstandardSticks, reprs.branchedSticks, reprs.branchedLinkageSticks]
+        .filter((repr => repr !== undefined) as ((repr: any) => repr is Builder.Representation));
+    // not including waterSticks, because they are colored red anyway
+}
+
 export function applyEntityColors(repr: Builder.Representation, colors: { [entityId: string]: ColorT }) {
-    for (const entityId in colors) {
-        repr.color({
-            selector: { label_entity_id: entityId },
-            color: colors[entityId],
-        });
-    }
+    repr.colorFromSource({ schema: 'all_atomic', category_name: 'entity', field_remapping: { label_entity_id: 'id' }, field_name: 'id', palette: { kind: 'categorical', colors: colors } });
 }
 
 export function applyElementColors(repr: Builder.Representation) {
