@@ -1,15 +1,12 @@
-import { MVSData, MVSData_State } from 'molstar/lib/extensions/mvs/mvs-data';
+import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
+import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
-import { ColorT, ComponentExpressionT, ComponentSelectorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { Model } from 'molstar/lib/mol-model/structure';
-import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
 import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
-import { chainSurroundings, getChainInfo, structurePolymerResidueCount } from './structure-info';
-import { easing } from '@mui/material';
-import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
+import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
 
 
 const ValidationTypes = ['issue_count', 'bond_angles', 'clashes', 'sidechain_outliers', 'symm_clashes', 'planes'] as const;
@@ -37,6 +34,8 @@ type SnapshotSpecParams = {
         entityId: string,
         /** `undefined` for showing first instance of the entity */
         labelAsymId?: string,
+        /** `undefined` for showing first instance of the entity */
+        instanceId?: string,
     },
 }
 /** Special value for `assemblyId` meaning that the preferred assembly should be used. */
@@ -170,12 +169,33 @@ export class MVSSnapshotProvider {
             }
             case 'pdbconnect_summary_macromolecule': {
                 const entities = await this.dataProvider.entities(entryId);
+
+                const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
+                const modelData = await this.getModel(entryId);
+                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+
                 for (const entityId in entities) {
                     const entity = entities[entityId];
                     if (MacromoleculeTypes.has(entity.type)) {
-                        out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: undefined } });
-                        for (const labelAsymId of entity.chains) {
-                            out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
+                        // Model-agnostic version:
+                        // out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: undefined, instanceId: undefined } });
+                        // for (const labelAsymId of entity.chains) {
+                        //     out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
+                        // }
+                        const foundInPreferredAssembly = entity.chains.some(chain => chainInstancesInfo[preferredAssembly].operatorsPerChain[chain]?.length > 0);
+                        if (foundInPreferredAssembly) {
+                            for (const instanceId of chainInstancesInfo[preferredAssembly].allOperators) {
+                                for (const labelAsymId of chainInstancesInfo[preferredAssembly].chainsPerOperator[instanceId]) {
+                                    if (entity.chains.includes(labelAsymId)) {
+                                        out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId}, instance_id ${instanceId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId, instanceId: instanceId } });
+                                    }
+                                }
+                            }
+                        } else {
+                            // Fallback to deposited model                        
+                            for (const labelAsymId of entity.chains) {
+                                out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId}, model)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
+                            }
                         }
                     }
                 }
@@ -579,10 +599,15 @@ export class MVSSnapshotProvider {
             (await this.getPreferredAssembly(params.entry)).assemblyId
             : params.assemblyId;
 
+        const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
+        const entityChains = entities[params.entityId].chains;
+
+        const modelData = await this.getModel(params.entry);
+        const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+
         if (displayedAssembly !== MODEL) {
             // Find out if the assembly contains this entity and potentially fall back to deposited model)
-            const entitiesInAssemblies = await this.dataProvider.entitiesInAssemblies(params.entry);
-            const entityPresent = entitiesInAssemblies[params.entityId]?.assemblies.includes(displayedAssembly);
+            const entityPresent = entityChains.some(chain => chainInstancesInfo[displayedAssembly].operatorsPerChain[chain]?.length > 0);
             if (!entityPresent) {
                 displayedAssembly = MODEL;
             }
@@ -593,6 +618,7 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
         // TODO consider background structure display: white without opacity vs gray with opacity (consider hiding by size_factor in 3j3q)
+        // TODO prohibit cartoon quality 'lowest' (consider hiding by size_factor in 3j3q)
         const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
         // const modelData = await this.getModel(params.entry);
         // const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, displayedAssemblyId));
@@ -601,13 +627,13 @@ export class MVSSnapshotProvider {
         //     repr.color({ color: 'gray' });
         // }
 
-        const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
         const entityType = decideEntityType(entities[params.entityId]);
-        const highlightedChain = params.labelAsymId ?? entities[params.entityId].chains[0];
-        // TODO consider instance_id
+        const highlightedChain = params.labelAsymId ?? entityChains[0];
+        const highlightedInstance = params.instanceId
+            ?? (displayedAssembly === MODEL ? undefined : chainInstancesInfo[displayedAssembly].operatorsPerChain[highlightedChain][0]);
 
-        const entityComponents = applyStandardComponentsForChain(struct, highlightedChain, entityType, { modifiedResidues });
+        const entityComponents = applyStandardComponentsForChain(struct, highlightedChain, highlightedInstance, entityType, { modifiedResidues });
         for (const repr of Object.values(entityComponents)) {
             repr.focus();
         }
@@ -622,6 +648,7 @@ export class MVSSnapshotProvider {
             .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
             .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
         // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
+
         outDescription.push(`## Macromolecule ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
         outDescription.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${highlightedChain} (label_asym_id) in ${assemblyText}.`);

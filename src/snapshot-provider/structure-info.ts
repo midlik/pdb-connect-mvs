@@ -56,6 +56,52 @@ function getChainCountsInAssembly(model: Model, assemblyId: string | undefined) 
     return chainCounts;
 }
 
+/** Information about symmetry operators used in all available assemblies and which operators are applied to which chains. */
+interface ChainInstancesInfo {
+    [assemblyId: string]: {
+        /** instance_ids of all symmetry operators used in construction of the assembly. */
+        allOperators: string[],
+        /** instance_ids of symmetry operators applied to each individual chain (identified by label_asym_id) in the assembly. */
+        operatorsPerChain: {
+            [labelChainId: string]: string[],
+        },
+        /** label_asym_ids of chains to which each symmetry operator (identified by instance_id) is applied in the assembly. */
+        chainsPerOperator: {
+            [instanceId: string]: string[],
+        },
+    },
+}
+
+/** Get information about symmetry operators used in all available assemblies and which operators are applied to which chains. */
+export function getChainInstancesInAssemblies(model: Model): ChainInstancesInfo {
+    const symmetry = ModelSymmetry.Provider.get(model);
+    const assemblies = symmetry?.assemblies ?? [];
+    const out: ChainInstancesInfo = {};
+    for (const assembly of assemblies) {
+        const allOperators: string[] = [];
+        const operatorsPerChain: { [labelChainId: string]: string[] } = {};
+        const chainsPerOperator: { [instanceId: string]: string[] } = {};
+        const seenOperators = new Set<string>();
+        for (const group of assembly.operatorGroups) {
+            for (const op of group.operators) {
+                const instanceId = op.instanceId;
+                if (!seenOperators.has(instanceId)) {
+                    seenOperators.add(instanceId);
+                    allOperators.push(instanceId);
+                }
+                if (group.asymIds) {
+                    for (const labelAsymId of group.asymIds) {
+                        (operatorsPerChain[labelAsymId] ??= []).push(instanceId);
+                        (chainsPerOperator[instanceId] ??= []).push(labelAsymId);
+                    }
+                }
+            }
+        }
+        out[assembly.id] = { allOperators, operatorsPerChain, chainsPerOperator };
+    }
+    return out;
+}
+
 function getChainPolymerResidueCounts(model: Model) {
     const { atomicHierarchy: h, entities } = model;
     const chainSizes: { [labelChainId: string]: number } = {};

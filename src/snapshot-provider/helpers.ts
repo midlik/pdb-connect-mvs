@@ -58,7 +58,6 @@ export type StandardRepresentationCollection = { [type in StandardRepresentation
 
 export const StandardRepresentations: { [type in StandardComponentType]?: (comp: Builder.Component, options: StandardRepresentationsOptions) => { [repr in StandardRepresentationType]?: Builder.Representation } } = {
     polymer(component: Builder.Component, options: StandardRepresentationsOptions) {
-        console.log('polymer', component, options)
         return {
             polymerCartoon: applyOpacity(component.representation({ type: 'cartoon', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'polymerCartoon') }), options.opacityFactor),
         };
@@ -98,7 +97,6 @@ export const StandardRepresentations: { [type in StandardComponentType]?: (comp:
 
 function makeRef(prefix: string | undefined, suffix: string | undefined) {
     if (prefix === undefined || suffix === undefined) return undefined;
-    console.log('makeRef', prefix, suffix, `${prefix}_${suffix}`)
     return `${prefix}_${suffix}`;
 }
 
@@ -126,18 +124,18 @@ export function applyStandardComponentsForEntity(struct: Builder.Structure, enti
     }
 }
 
-export function applyStandardComponentsForChain(struct: Builder.Structure, labelAsymId: string, entityType: EntityType, options: StandardComponentsOptions): StandardComponentCollection {
+export function applyStandardComponentsForChain(struct: Builder.Structure, labelAsymId: string, instanceId: string | undefined, entityType: EntityType, options: StandardComponentsOptions): StandardComponentCollection {
     if (entityType === 'polymer') {
         const out: StandardComponentCollection = {};
-        out.polymer = struct.component({ selector: { label_asym_id: labelAsymId } });
+        out.polymer = struct.component({ selector: { label_asym_id: labelAsymId, instance_id: instanceId } });
         const modifiedResiduesHere = options.modifiedResidues.filter(r => r.labelAsymId === labelAsymId);
         if (modifiedResiduesHere.length > 0) {
-            out.nonstandard = struct.component({ selector: modifiedResiduesHere.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) });
+            out.nonstandard = struct.component({ selector: modifiedResiduesHere.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId, instance_id: instanceId })) });
         }
         return out;
     } else {
         return {
-            [entityType]: struct.component({ selector: { label_asym_id: labelAsymId } }),
+            [entityType]: struct.component({ selector: { label_asym_id: labelAsymId, instance_id: instanceId } }),
         };
     }
 }
