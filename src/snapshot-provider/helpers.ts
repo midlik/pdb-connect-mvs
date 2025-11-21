@@ -49,48 +49,58 @@ export const StardardComponents: { [type in StandardComponentType]?: (struct: Bu
 export interface StandardRepresentationsOptions {
     opacityFactor?: number,
     skipComponents?: StandardComponentType[],
+    sizeFactor?: number,
+    custom?: Record<string, unknown>,
+    refPrefix?: string,
 }
 
 export type StandardRepresentationCollection = { [type in StandardRepresentationType]?: Builder.Representation };
 
 export const StandardRepresentations: { [type in StandardComponentType]?: (comp: Builder.Component, options: StandardRepresentationsOptions) => { [repr in StandardRepresentationType]?: Builder.Representation } } = {
     polymer(component: Builder.Component, options: StandardRepresentationsOptions) {
+        console.log('polymer', component, options)
         return {
-            polymerCartoon: applyOpacity(component.representation({ type: 'cartoon' }), options.opacityFactor),
+            polymerCartoon: applyOpacity(component.representation({ type: 'cartoon', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'polymerCartoon') }), options.opacityFactor),
         };
     },
     branched(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            branchedCarbohydrate: applyOpacity(component.representation({ type: 'carbohydrate' }), options.opacityFactor), // TODO change size factor for SNFG to 1.75 in Molstar MVS extension
-            branchedSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), 0.3 * (options.opacityFactor ?? 1)),
+            branchedCarbohydrate: applyOpacity(component.representation({ type: 'carbohydrate', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'branchedCarbohydrate') }), options.opacityFactor), // TODO change size factor for SNFG to 1.75 in Molstar MVS extension
+            branchedSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'branchedSticks') }), 0.3 * (options.opacityFactor ?? 1)),
         };
     },
     branchedLinkage(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            branchedLinkageSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+            branchedLinkageSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'branchedLinkageSticks') }), options.opacityFactor),
         };
     },
     ligand(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            ligandSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+            ligandSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'ligandSticks') }), options.opacityFactor),
         };
     },
     ion(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            ionSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+            ionSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'ionSticks') }), options.opacityFactor),
         };
     },
     nonstandard(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            nonstandardSticks: applyOpacity(component.representation({ type: 'ball_and_stick' }), options.opacityFactor),
+            nonstandardSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'nonstandardSticks') }), options.opacityFactor),
         };
     },
     water(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            waterSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: 0.5 }), 0.5 * (options.opacityFactor ?? 1)),
+            waterSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: 0.5 * (options.sizeFactor ?? 1), custom: options.custom, ref: makeRef(options.refPrefix, 'waterSticks') }), 0.5 * (options.opacityFactor ?? 1)),
         };
     },
 };
+
+function makeRef(prefix: string | undefined, suffix: string | undefined) {
+    if (prefix === undefined || suffix === undefined) return undefined;
+    console.log('makeRef', prefix, suffix, `${prefix}_${suffix}`)
+    return `${prefix}_${suffix}`;
+}
 
 
 export function applyStandardComponents(struct: Builder.Structure, options: StandardComponentsOptions): StandardComponentCollection {
@@ -112,6 +122,22 @@ export function applyStandardComponentsForEntity(struct: Builder.Structure, enti
     } else {
         return {
             [entityType]: struct.component({ selector: { label_entity_id: entityId } }),
+        };
+    }
+}
+
+export function applyStandardComponentsForChain(struct: Builder.Structure, labelAsymId: string, entityType: EntityType, options: StandardComponentsOptions): StandardComponentCollection {
+    if (entityType === 'polymer') {
+        const out: StandardComponentCollection = {};
+        out.polymer = struct.component({ selector: { label_asym_id: labelAsymId } });
+        const modifiedResiduesHere = options.modifiedResidues.filter(r => r.labelAsymId === labelAsymId);
+        if (modifiedResiduesHere.length > 0) {
+            out.nonstandard = struct.component({ selector: modifiedResiduesHere.map(r => ({ label_asym_id: r.labelAsymId, label_seq_id: r.labelSeqId })) });
+        }
+        return out;
+    } else {
+        return {
+            [entityType]: struct.component({ selector: { label_asym_id: labelAsymId } }),
         };
     }
 }

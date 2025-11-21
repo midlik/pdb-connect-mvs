@@ -5,9 +5,11 @@ import { Model } from 'molstar/lib/mol-model/structure';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
 import { chainSurroundings, getChainInfo, structurePolymerResidueCount } from './structure-info';
+import { easing } from '@mui/material';
+import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 
 
 const ValidationTypes = ['issue_count', 'bond_angles', 'clashes', 'sidechain_outliers', 'symm_clashes', 'planes'] as const;
@@ -30,13 +32,19 @@ type SnapshotSpecParams = {
     },
     pdbconnect_summary_macromolecule: {
         entry: string,
-        /** Assembly ID (`undefined` for preferred assembly) */
-        assemblyId?: string,
+        /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
+        assemblyId: string,
         entityId: string,
         /** `undefined` for showing first instance of the entity */
         labelAsymId?: string,
     },
 }
+/** Special value for `assemblyId` meaning that the preferred assembly should be used. */
+const PREFERRED = 'preferred';
+
+/** Special value for `assemblyId` meaning that the deposited model should be used instead of any assembly. */
+const MODEL = 'model';
+
 type SnapshotKind = keyof SnapshotSpecParams;
 const SnapshotKinds = [
     'entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation',
@@ -165,9 +173,9 @@ export class MVSSnapshotProvider {
                 for (const entityId in entities) {
                     const entity = entities[entityId];
                     if (MacromoleculeTypes.has(entity.type)) {
-                        out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: undefined, entityId: entityId, labelAsymId: undefined } });
+                        out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: undefined } });
                         for (const labelAsymId of entity.chains) {
-                            out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: undefined, entityId: entityId, labelAsymId: labelAsymId } });
+                            out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
                         }
                     }
                 }
@@ -187,7 +195,7 @@ export class MVSSnapshotProvider {
         return out;
     }
 
-    async getSnapshot(spec: SnapshotSpec): Promise<MVSData_State> {
+    async getSnapshot(spec: SnapshotSpec, asMultistate: boolean): Promise<MVSData> {
         const builder = MVSData.createBuilder();
         const model = builder
             .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
@@ -223,13 +231,19 @@ export class MVSSnapshotProvider {
                 await this.loadPdbconnectSummaryDefault(model, description, spec.params);
                 break;
             case 'pdbconnect_summary_macromolecule':
-                await this.loadPdbconnectSummaryMacromolecule(model, description, spec.params);
+                await this.loadPdbconnectSummaryMacromolecule(model, description, spec.params, builder);
                 break;
         }
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
         description.push(`- **View params:** ${JSON.stringify(spec.params)}`);
-        return builder.getState({ title: spec.name, description: description.join('\n\n') });
+        // TODO Molstar: ensure that camera transition is played when loading a multistate MVS! (or give up animations if not possible)
+        if (asMultistate) {
+            const snapshot = builder.getSnapshot({ title: spec.name, description: description.join('\n\n'), linger_duration_ms: 10_000 });
+            return MVSData.createMultistate([snapshot], { title: spec.name, description: description.join('\n\n') });
+        } else {
+            return builder.getState({ title: spec.name, description: description.join('\n\n') });
+        }
     }
 
     private async loadEntry(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['entry']) {
@@ -305,7 +319,7 @@ export class MVSSnapshotProvider {
         const entityType = decideEntityType(entities[params.entityId]);
 
         const entityComponents = applyStandardComponentsForEntity(struct, params.entityId, entityType, { modifiedResidues });
-        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1, skipComponents: ['water'] });
+        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1 });
         for (const repr of Object.values(entityRepresentations)) {
             repr.color({ color: entityColors[params.entityId] });
         }
@@ -455,7 +469,7 @@ export class MVSSnapshotProvider {
         const components = applyStandardComponents(struct, { modifiedResidues });
 
         const representations = applyStandardRepresentations(components, { skipComponents: ['polymer', 'water'] });
-        representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO make this putty with size "uncertainty" (low prio)
+        representations.polymerCartoon = components.polymer?.representation({ type: 'cartoon' }); // TODO Molstar: make this putty with size "uncertainty" (low prio)
 
         for (const repr of Object.values(representations)) {
             repr.colorFromSource({
@@ -534,7 +548,7 @@ export class MVSSnapshotProvider {
     private async loadPdbconnectSummaryDefault(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
         const displayedAssemblyId = params.assemblyId ?? (await this.getPreferredAssembly(params.entry)).assemblyId;
         const struct = model.assemblyStructure({ assembly_id: displayedAssemblyId });
-        struct.component().focus();
+        // struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
@@ -548,9 +562,9 @@ export class MVSSnapshotProvider {
         for (const repr of atomicRepresentations(representations)) {
             applyElementColors(repr);
         }
-        // TODO only apply entity colors to polymers? check with Marcelo
         // TODO ensure default Molstar show-environment behavior uses either entity colors or all-gray -> PDBeMolstar does it somehow but now idea how (+ ideally increase bubble size)
-        // TODO ball_and_stick size theme physical?
+        // TODO Molstar: ball_and_stick size theme physical?
+        // TODO compute PCA to orient camera?
 
         if (params.assemblyId === undefined) {
             outDescription.push(`## Preferred complex`);
@@ -560,8 +574,60 @@ export class MVSSnapshotProvider {
         outDescription.push(`This is complex (assembly) ${displayedAssemblyId}.`);
     }
 
-    private async loadPdbconnectSummaryMacromolecule(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
-        throw new Error('NotImplementedError');
+    private async loadPdbconnectSummaryMacromolecule(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule'], builder: Builder.Root) {
+        let displayedAssembly = params.assemblyId === PREFERRED ?
+            (await this.getPreferredAssembly(params.entry)).assemblyId
+            : params.assemblyId;
+
+        if (displayedAssembly !== MODEL) {
+            // Find out if the assembly contains this entity and potentially fall back to deposited model)
+            const entitiesInAssemblies = await this.dataProvider.entitiesInAssemblies(params.entry);
+            const entityPresent = entitiesInAssemblies[params.entityId]?.assemblies.includes(displayedAssembly);
+            if (!entityPresent) {
+                displayedAssembly = MODEL;
+            }
+        }
+
+        const struct = displayedAssembly === MODEL ? model.modelStructure() : model.assemblyStructure({ assembly_id: displayedAssembly });
+
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const components = applyStandardComponents(struct, { modifiedResidues });
+        // TODO consider background structure display: white without opacity vs gray with opacity (consider hiding by size_factor in 3j3q)
+        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
+        // const modelData = await this.getModel(params.entry);
+        // const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, displayedAssemblyId));
+        // const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
+        // for (const repr of Object.values(representations)) {
+        //     repr.color({ color: 'gray' });
+        // }
+
+        const entities = await this.dataProvider.entities(params.entry);
+        const entityColors = getEntityColors(entities);
+        const entityType = decideEntityType(entities[params.entityId]);
+        const highlightedChain = params.labelAsymId ?? entities[params.entityId].chains[0];
+        // TODO consider instance_id
+
+        const entityComponents = applyStandardComponentsForChain(struct, highlightedChain, entityType, { modifiedResidues });
+        for (const repr of Object.values(entityComponents)) {
+            repr.focus();
+        }
+        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1, sizeFactor: 1.05, custom: CustomDataForEmissivePulse, refPrefix: 'highlighted' });
+        for (const repr of Object.values(entityRepresentations)) {
+            repr.color({ color: entityColors[params.entityId] });
+        }
+        for (const repr of atomicRepresentations(entityRepresentations)) {
+            applyElementColors(repr);
+        }
+        builder.animation({})
+            .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
+            .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
+        // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
+        outDescription.push(`## Macromolecule ${params.entityId}`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${highlightedChain} (label_asym_id) in ${assemblyText}.`);
+        if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
+            outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+        }
     }
 
     private async getPreferredAssembly(entryId: string) {
@@ -602,6 +668,21 @@ function max<T, V>(array: T[], key: (elem: T) => V): T {
         }
     }
     return argMax;
+}
+
+const CustomDataForEmissivePulse = { molstar_representation_params: { emissive: 0 } };
+function makeEmissivePulse(representationRef: string, strength: number = 0.33): MVSAnimationNodeParams<"interpolate"> {
+    return {
+        kind: 'scalar' as const,
+        target_ref: representationRef,
+        start_ms: 250, // TODO ensure this happen in the middle of camera transition
+        duration_ms: 600,
+        frequency: 2, // TODO ask people if they like single of double blink
+        alternate_direction: true,
+        property: ['custom', 'molstar_representation_params', 'emissive'],
+        start: 0,
+        end: strength,
+    };
 }
 
 export interface MVSSnapshotProviderConfig {

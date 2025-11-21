@@ -60,7 +60,7 @@ export class ApiDataProvider implements IDataProvider {
         for (const record of json[pdbId] ?? []) {
             result[record.entity_id] = {
                 id: `${record.entity_id}`, // entity ID is string, even though the API may serve it as number
-                name: record.synonym ?? record.molecule_name?.[0] ?? '?',
+                name: record.molecule_name.join(' / '), // concatenating in case of chimeras, e.g. 6hr1
                 type: record.molecule_type,
                 compIds: record.chem_comp_ids ?? [],
                 chains: record.in_struct_asyms ?? [],

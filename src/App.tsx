@@ -72,9 +72,10 @@ class AppModel {
         if (!this.viewer) return;
         this.isBusy.next(true);
         try {
-            const snapshot: MVSData = await this.mvsProvider.getSnapshot(snapshotSpec);
-            // const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
-            // console.log('mvsj', mvsj.length, mvsj)
+            let snapshot: MVSData = await this.mvsProvider.getSnapshot(snapshotSpec, false);
+            snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly
+            const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
+            console.log('mvsj', mvsj.length, mvsj)
             console.log(Molstar.PluginExtensions.mvs.MVSData.toPrettyString(snapshot))
             // await new Promise(resolve => setTimeout(resolve, 500));
             this.snapshot.next(snapshot);
@@ -101,13 +102,13 @@ function ViewerWindow({ model }: { model: AppModel }) {
 }
 
 function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }) {
-    const [snapshots, setSnapshots] = useState<SnapshotSpec[]>([]);
+    const [snapshots, setSnapshots] = useState<SnapshotSpec[] | undefined>(undefined);
     useEffect(() => {
         model.mvsProvider.listSnapshots(entryId).then(setSnapshots);
     }, [model, entryId]);
 
     const kinds = model.mvsProvider.listSnapshotKinds();
-    const [tab, setTab] = React.useState<string>('pdbconnect_summary_default');
+    const [category, setCategory] = React.useState<string>('pdbconnect_summary_macromolecule');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
@@ -116,21 +117,23 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
             <Select fullWidth
                 labelId="view-category-select-label"
                 id="view-category-select"
-                value={tab}
+                value={category}
                 label="Age"
-                onChange={(e, value) => setTab(e.target.value)}
+                onChange={e => setCategory(e.target.value)}
                 style={{ height: '2.5em' }}
             >
-                {kinds.map(kind => <MenuItem value={kind}>{kind}</MenuItem>)}
+                {kinds.map(kind =>
+                    <MenuItem value={kind}>{`${kind} (${snapshots?.filter(s => s.kind === kind).length ?? '⏳'})`}</MenuItem>
+                )}
             </Select>
         </div>
-        <ViewButtons model={model} snapshots={snapshots.filter(s => s.kind === tab)} />
-        <hr/>
+        <ViewButtons model={model} snapshots={snapshots?.filter(s => s.kind === category)} />
+        <hr />
         <Description model={model} />
     </div>;
 }
 
-function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: SnapshotSpec[] }) {
+function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: SnapshotSpec[] | undefined }) {
     const [busy, setBusy] = useState<boolean>();
     const [snapshotName, setSnapshotName] = useState<string | undefined>();
     useEffect(() => {
@@ -143,13 +146,14 @@ function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: Snapsho
     }, [model]);
 
     return <div className='ViewButtons'>
-        {snapshots.map(s =>
+        {snapshots?.map(s =>
             <Button key={s.name} variant={s.name === snapshotName ? 'contained' : 'outlined'} style={{ margin: 2, textTransform: 'none' }}
                 disabled={busy} onClick={() => model.loadSnapshot(s)} >
                 {s.name}
             </Button>
         )}
-        {snapshots.length === 0 && <i style={{ color: 'gray' }}>No views in this category.</i>}
+        {snapshots === undefined && <i style={{ color: 'gray' }}>Loading views...</i>}
+        {snapshots?.length === 0 && <i style={{ color: 'gray' }}>No views in this category.</i>}
     </div>;
 }
 
