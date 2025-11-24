@@ -75,7 +75,7 @@ class AppModel {
             let snapshot: MVSData = await this.mvsProvider.getSnapshot(snapshotSpec, false);
             snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly
             const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
-            console.log('mvsj', mvsj.length, mvsj)
+            // console.log('mvsj', mvsj.length, mvsj)
             console.log(Molstar.PluginExtensions.mvs.MVSData.toPrettyString(snapshot))
             // await new Promise(resolve => setTimeout(resolve, 500));
             this.snapshot.next(snapshot);
@@ -144,9 +144,17 @@ function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: Snapsho
         const sub = model.isBusy.subscribe(setBusy);
         return () => sub.unsubscribe();
     }, [model]);
+    const [maxSnapshots, setMaxSnapshots] = useState(0);
+    useEffect(() => setMaxSnapshots(200), [snapshots]);
 
     return <div className='ViewButtons'>
-        {snapshots?.map(s =>
+        {snapshots && snapshots.length > maxSnapshots &&
+            <div style={{ marginBottom: 8 }}>
+                <i>Showing only first {maxSnapshots} views in this category, for UI performance reasons. </i>
+                <Button variant='text' onClick={() => setMaxSnapshots(Infinity)}>Show all</Button>
+            </div>
+        }
+        {snapshots?.slice(0, maxSnapshots).map(s =>
             <Button key={s.name} variant={s.name === snapshotName ? 'contained' : 'outlined'} style={{ margin: 2, textTransform: 'none' }}
                 disabled={busy} onClick={() => model.loadSnapshot(s)} >
                 {s.name}
