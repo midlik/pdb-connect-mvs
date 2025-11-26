@@ -1,8 +1,5 @@
-import TabContext from '@mui/lab/TabContext';
-import TabPanel from '@mui/lab/TabPanel';
+import { MenuItem, Select } from '@mui/material';
 import Button from '@mui/material/Button';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
 import React, { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { BehaviorSubject } from 'rxjs';
@@ -10,7 +7,6 @@ import './App.css';
 import { ApiDataProvider } from './snapshot-provider/data-provider';
 import { MolstarModelProvider } from './snapshot-provider/model-provider';
 import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, MVSSnapshotProviderConfig, SnapshotSpec } from './snapshot-provider/mvs-snapshot-provider';
-import { Checkbox, FormControl, FormControlLabel, FormGroup, InputLabel, MenuItem, Select } from '@mui/material';
 
 
 type Molstar = typeof import('molstar/lib/apps/viewer');
@@ -108,7 +104,7 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
     }, [model, entryId]);
 
     const kinds = model.mvsProvider.listSnapshotKinds();
-    const [category, setCategory] = React.useState<string>('pdbconnect_summary_macromolecule');
+    const [category, setCategory] = React.useState<string>('pdbconnect_summary_all_ligands');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
@@ -179,7 +175,7 @@ function Description({ model }: { model: AppModel }) {
 }
 
 
-/** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
+/** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api/v2) */
 function getMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
     const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
     const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);

@@ -57,7 +57,7 @@ function getChainCountsInAssembly(model: Model, assemblyId: string | undefined) 
 }
 
 /** Information about symmetry operators used in all available assemblies and which operators are applied to which chains. */
-interface ChainInstancesInfo {
+export interface ChainInstancesInfo {
     [assemblyId: string]: {
         /** instance_ids of all symmetry operators used in construction of the assembly. */
         allOperators: string[],

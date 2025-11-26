@@ -7,7 +7,7 @@ import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol'
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS } from './colors';
 import { DomainRecord, EntityRecord, ModifiedResidueRecord } from './data-provider';
-import { ChainInfo } from './structure-info';
+import { ChainInfo, ChainInstancesInfo } from './structure-info';
 
 
 export type EntityType = 'polymer' | 'branched' | 'ligand' | 'ion' | 'water';
@@ -204,7 +204,7 @@ export function getEntityColors(entities: { [entityId: string]: EntityRecord }):
 
     for (const entityId of Object.keys(entities)) {
         const entity = entities[entityId];
-        const color = entity.type === 'water' ? waterColor : entity.type === 'bound' ? ligandColorIterator.next().value! : polymerColorIterator.next().value!;
+        const color = entity.type === 'water' ? waterColor : entityIsLigand(entity) ? ligandColorIterator.next().value! : polymerColorIterator.next().value!;
         out[entityId] = color;
         // TODO assign fixed colors to single-element ligands? (like in PDBImages)
     }
@@ -277,3 +277,51 @@ export function smartFadedOpacity(nPolymerResidues: number, params: typeof SMART
     const theoreticalOpacity = 1 - (1 - targetOpacity) ** (1 / (n0 + nPolymerResidues) ** (1 / 3));
     return baseOpacity + theoreticalOpacity;
 }
+
+export function listEntityInstancesInAssembly(entity: EntityRecord, chainInstancesInfo: ChainInstancesInfo[string]) {
+    const out = [] as { labelAsymId: string, instanceId: string | undefined }[];
+    const entityChains = new Set(entity.chains);
+    for (const instanceId of chainInstancesInfo.allOperators) {
+        for (const labelAsymId of chainInstancesInfo.chainsPerOperator[instanceId]) {
+            if (entityChains.has(labelAsymId)) {
+                out.push({ labelAsymId, instanceId });
+            }
+        }
+    }
+    return out;
+}
+export function listEntityInstancesInModel(entity: EntityRecord) {
+    const out = [] as { labelAsymId: string, instanceId: string | undefined }[];
+    for (const labelAsymId of entity.chains) {
+        out.push({ labelAsymId, instanceId: undefined });
+    }
+    return out;
+}
+
+/** Set of entity types as reported by the `molecules` API, corresponding to macromolecules */
+export const MacromoleculeTypes = new Set([
+    'polypeptide(D)', // e.g. 7pcj
+    'polypeptide(L)', // e.g. 7pcj
+    'polydeoxyribonucleotide', // e.g. 7v6v
+    'polyribonucleotide', // e.g. 1y26
+    'polydeoxyribonucleotide/polyribonucleotide hybrid', // e.g. 5vze
+    'peptide nucleic acid', // e.g. 2kvj
+    'cyclic-pseudo-peptide', // not found in mmCIFs, but listed in controlled vocabulary for _entity_poly.type 
+    'other', // maybe not found in mmCIFs, but listed in controlled vocabulary for _entity_poly.type
+    'carbohydrate polymer', // found in API
+]);
+
+
+export function entityIsMacromolecule(entity: EntityRecord): boolean {
+    return MacromoleculeTypes.has(entity.type);
+}
+export function entityIsLigand(entity: EntityRecord): boolean {
+    return entity.type === 'bound' && entity.compIds.length === 1;
+}
+
+
+// Examples (zgrep in PDB mirror from 2023-05-04):
+// - peptide nucleic acid :
+//   - 2kvj
+//   - wrongly annotated: 1pdt entity 2, 1nr8 entity 2, 2k4g entity 1, 1rru entity 1, 1pup entity 1, 1hzs entity 1, 1qpy entity 1, 1xj9 entity 1
+//   - 7kzl entity 2 whuuut? (annotated as polypeptide(L))

@@ -4,7 +4,7 @@ import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { Model } from 'molstar/lib/mol-model/structure';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, getDomainColors, getEntityColors, getModresColors, smartFadedOpacity, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getEntityColors, getModresColors, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
 
@@ -23,14 +23,35 @@ type SnapshotSpecParams = {
     bfactor: { entry: string },
     validation: { entry: string, validation_type: ValidationType },
     pdbconnect_summary_default: {
+        /** PDB ID */
         entry: string,
-        /** Assembly ID (`undefined` for preferred assembly) */
-        assemblyId?: string,
+        /** Assembly ID (or `'preferred'` for preferred assembly) */
+        assemblyId: string,
     },
     pdbconnect_summary_macromolecule: {
+        /** PDB ID */
         entry: string,
         /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
         assemblyId: string,
+        /** Entity ID of the macromolecule (polymer or branched) entity */
+        entityId: string,
+        /** `undefined` for showing first instance of the entity */
+        labelAsymId?: string,
+        /** `undefined` for showing first instance of the entity */
+        instanceId?: string,
+    },
+    pdbconnect_summary_all_ligands: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
+        assemblyId: string,
+    },
+    pdbconnect_summary_ligand: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
+        assemblyId: string,
+        /** Entity ID of the ligand entity */
         entityId: string,
         /** `undefined` for showing first instance of the entity */
         labelAsymId?: string,
@@ -49,6 +70,8 @@ const SnapshotKinds = [
     'entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation',
     'pdbconnect_summary_default',
     'pdbconnect_summary_macromolecule',
+    'pdbconnect_summary_all_ligands',
+    'pdbconnect_summary_ligand',
 ] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
@@ -128,7 +151,7 @@ export class MVSSnapshotProvider {
                 const entities = await this.dataProvider.entities(entryId); // thank you switch for not letting me have the same var name again
                 for (const ent in entities) {
                     const entityRecord = entities[ent];
-                    if (entityRecord.type === 'bound' && entityRecord.compIds.length === 1) {
+                    if (entityIsLigand(entityRecord)) {
                         const compId = entityRecord.compIds[0];
                         out.push({ kind: 'ligand', name: `Ligand ${compId}`, params: { entry: entryId, compId, labelAsymId: undefined } });
                     }
@@ -160,7 +183,7 @@ export class MVSSnapshotProvider {
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 const preferred = assemblies.find(ass => ass.preferred);
                 if (preferred) {
-                    out.push({ kind: 'pdbconnect_summary_default', name: `Preferred complex`, params: { entry: entryId, assemblyId: undefined } });
+                    out.push({ kind: 'pdbconnect_summary_default', name: `Preferred complex`, params: { entry: entryId, assemblyId: PREFERRED } });
                 }
                 for (const ass of assemblies) {
                     out.push({ kind: 'pdbconnect_summary_default', name: `Complex ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
@@ -169,33 +192,51 @@ export class MVSSnapshotProvider {
             }
             case 'pdbconnect_summary_macromolecule': {
                 const entities = await this.dataProvider.entities(entryId);
-
                 const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
                 const modelData = await this.getModel(entryId);
                 const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-
                 for (const entityId in entities) {
                     const entity = entities[entityId];
-                    if (MacromoleculeTypes.has(entity.type)) {
+                    if (entityIsMacromolecule(entity)) {
                         // Model-agnostic version:
                         // out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: undefined, instanceId: undefined } });
                         // for (const labelAsymId of entity.chains) {
                         //     out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
                         // }
-                        const foundInPreferredAssembly = entity.chains.some(chain => chainInstancesInfo[preferredAssembly].operatorsPerChain[chain]?.length > 0);
-                        if (foundInPreferredAssembly) {
-                            for (const instanceId of chainInstancesInfo[preferredAssembly].allOperators) {
-                                for (const labelAsymId of chainInstancesInfo[preferredAssembly].chainsPerOperator[instanceId]) {
-                                    if (entity.chains.includes(labelAsymId)) {
-                                        out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId}, instance_id ${instanceId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId, instanceId: instanceId } });
-                                    }
-                                }
-                            }
-                        } else {
-                            // Fallback to deposited model                        
-                            for (const labelAsymId of entity.chains) {
-                                out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId}, model)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
-                            }
+                        let instances = listEntityInstancesInAssembly(entity, chainInstancesInfo[preferredAssembly]);
+                        if (instances.length === 0) instances = listEntityInstancesInModel(entity);
+                        for (const instance of instances) {
+                            out.push({
+                                kind: 'pdbconnect_summary_macromolecule',
+                                name: `Entity ${entityId} (label_asym_id ${instance.labelAsymId}, ${instance.instanceId ? `instance_id ${instance.instanceId}` : 'model'})`,
+                                params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: instance.labelAsymId, instanceId: instance.instanceId }
+                            });
+                        }
+                    }
+                }
+                break;
+            }
+            case 'pdbconnect_summary_all_ligands': {
+                out.push({ kind: 'pdbconnect_summary_all_ligands', name: `All ligands`, params: { entry: entryId, assemblyId: PREFERRED } });
+                break;
+            }
+            case 'pdbconnect_summary_ligand': {
+                const entities = await this.dataProvider.entities(entryId);
+                const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
+                const modelData = await this.getModel(entryId);
+                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+                for (const entityId in entities) {
+                    const entity = entities[entityId];
+                    if (entityIsLigand(entity)) {
+                        const compId = entity.compIds[0];
+                        let instances = listEntityInstancesInAssembly(entity, chainInstancesInfo[preferredAssembly]);
+                        if (instances.length === 0) instances = listEntityInstancesInModel(entity);
+                        for (const instance of instances) {
+                            out.push({
+                                kind: 'pdbconnect_summary_ligand',
+                                name: `Ligand entity ${entityId} (${compId}, label_asym_id ${instance.labelAsymId}, ${instance.instanceId ? `instance_id ${instance.instanceId}` : 'model'})`,
+                                params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: instance.labelAsymId, instanceId: instance.instanceId }
+                            });
                         }
                     }
                 }
@@ -252,6 +293,12 @@ export class MVSSnapshotProvider {
                 break;
             case 'pdbconnect_summary_macromolecule':
                 await this.loadPdbconnectSummaryMacromolecule(model, description, spec.params, builder);
+                break;
+            case 'pdbconnect_summary_all_ligands':
+                await this.loadPdbconnectSummaryAllLigands(model, description, spec.params);
+                break;
+            case 'pdbconnect_summary_ligand':
+                await this.loadPdbconnectSummaryLigand(model, description, spec.params);
                 break;
         }
         description.push('---');
@@ -566,8 +613,11 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryDefault(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
-        const displayedAssemblyId = params.assemblyId ?? (await this.getPreferredAssembly(params.entry)).assemblyId;
-        const struct = model.assemblyStructure({ assembly_id: displayedAssemblyId });
+        let displayedAssembly = params.assemblyId === PREFERRED ?
+            (await this.getPreferredAssembly(params.entry)).assemblyId
+            : params.assemblyId;
+
+        const struct = displayedAssembly === MODEL ? model.modelStructure() : model.assemblyStructure({ assembly_id: displayedAssembly });
         // struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -586,12 +636,13 @@ export class MVSSnapshotProvider {
         // TODO Molstar: ball_and_stick size theme physical?
         // TODO compute PCA to orient camera?
 
-        if (params.assemblyId === undefined) {
+        if (params.assemblyId === PREFERRED) {
             outDescription.push(`## Preferred complex`);
         } else {
-            outDescription.push(`## Complex ${displayedAssemblyId}`);
+            outDescription.push(`## Complex ${displayedAssembly}`);
         }
-        outDescription.push(`This is complex (assembly) ${displayedAssemblyId}.`);
+        outDescription.push(`This is complex (assembly) ${displayedAssembly}.`);
+        return struct;
     }
 
     private async loadPdbconnectSummaryMacromolecule(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule'], builder: Builder.Root) {
@@ -618,7 +669,7 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
         // TODO consider background structure display: white without opacity vs gray with opacity (consider hiding by size_factor in 3j3q)
-        // TODO prohibit cartoon quality 'lowest' (consider hiding by size_factor in 3j3q)
+        // TODO prohibit cartoon quality 'lowest' (consider hiding by size_factor in 3j3q); or use coloring instead of adding reprs for entities
         const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
         // const modelData = await this.getModel(params.entry);
         // const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, displayedAssemblyId));
@@ -634,8 +685,8 @@ export class MVSSnapshotProvider {
             ?? (displayedAssembly === MODEL ? undefined : chainInstancesInfo[displayedAssembly].operatorsPerChain[highlightedChain][0]);
 
         const entityComponents = applyStandardComponentsForChain(struct, highlightedChain, highlightedInstance, entityType, { modifiedResidues });
-        for (const repr of Object.values(entityComponents)) {
-            repr.focus();
+        for (const comp of Object.values(entityComponents)) {
+            comp.focus();
         }
         const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1, sizeFactor: 1.05, custom: CustomDataForEmissivePulse, refPrefix: 'highlighted' });
         for (const repr of Object.values(entityRepresentations)) {
@@ -656,7 +707,57 @@ export class MVSSnapshotProvider {
             outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
     }
+    private async loadPdbconnectSummaryAllLigands(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
+        let displayedAssembly = params.assemblyId === PREFERRED ?
+            (await this.getPreferredAssembly(params.entry)).assemblyId
+            : params.assemblyId;
+        const struct = await this.loadPdbconnectSummaryDefault(model, [], { entry: params.entry, assemblyId: displayedAssembly });
+        // TODO refactor this ugliness with BuilderContext
+        
+        const entities = await this.dataProvider.entities(params.entry);
+        const entityColors = getEntityColors(entities);
+        for (const entityId in entities) {
+            const entity = entities[entityId];
+            const entityColor = entityColors[entityId];
+            if (entityIsLigand(entity)) {
+                struct
+                    .component({ selector: { label_entity_id: entity.id } })
+                    .representation({ type: 'spacefill' })
+                    .color({ color: entityColor });
+            }
+        }
+    }
+    private async loadPdbconnectSummaryLigand(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
+        let displayedAssembly = params.assemblyId === PREFERRED ?
+            (await this.getPreferredAssembly(params.entry)).assemblyId
+            : params.assemblyId;
 
+        const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
+        const entityChains = entities[params.entityId].chains;
+
+        const modelData = await this.getModel(params.entry);
+        const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+
+        if (displayedAssembly !== MODEL) {
+            // Find out if the assembly contains this entity and potentially fall back to deposited model)
+            const entityPresent = entityChains.some(chain => chainInstancesInfo[displayedAssembly].operatorsPerChain[chain]?.length > 0);
+            if (!entityPresent) {
+                displayedAssembly = MODEL;
+            }
+        }
+
+
+        const struct = await this.loadPdbconnectSummaryDefault(model, [], { entry: params.entry, assemblyId: displayedAssembly });
+
+        struct.component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } }).focus();
+
+        outDescription.push(`## Ligand entity ${params.entityId}`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`This is ligand entity ${params.entityId} **${entities[params.entityId].compIds[0]}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
+        if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
+            outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+        }
+    }
     private async getPreferredAssembly(entryId: string) {
         const assemblies = await this.dataProvider.assemblies(entryId);
         const preferred = assemblies.find(ass => ass.preferred);
@@ -664,24 +765,6 @@ export class MVSSnapshotProvider {
         return preferred;
     }
 }
-
-/** Set of entity types as reported by the `molecules` API, corresponding to macromolecules */
-const MacromoleculeTypes = new Set([
-    'polypeptide(D)', // e.g. 7pcj
-    'polypeptide(L)', // e.g. 7pcj
-    'polydeoxyribonucleotide', // e.g. 7v6v
-    'polyribonucleotide', // e.g. 1y26
-    'polydeoxyribonucleotide/polyribonucleotide hybrid', // e.g. 5vze
-    'peptide nucleic acid', // e.g. 2kvj
-    'cyclic-pseudo-peptide', // not found in mmCIFs, but listed in controlled vocabulary for _entity_poly.type 
-    'other', // maybe not found in mmCIFs, but listed in controlled vocabulary for _entity_poly.type
-    'carbohydrate polymer', // found in API
-]);
-// Examples (zgrep in PDB mirror from 2023-05-04):
-// - peptide nucleic acid :
-//   - 2kvj
-//   - wrongly annotated: 1pdt entity 2, 1nr8 entity 2, 2k4g entity 1, 1rru entity 1, 1pup entity 1, 1hzs entity 1, 1qpy entity 1, 1xj9 entity 1
-//   - 7kzl entity 2 whuuut? (annotated as polypeptide(L))
 
 
 function max<T, V>(array: T[], key: (elem: T) => V): T {
@@ -719,14 +802,16 @@ export interface MVSSnapshotProviderConfig {
 }
 
 export const DefaultMVSSnapshotProviderConfig = {
-    PdbApiUrlPrefix: 'https://www.ebi.ac.uk/pdbe/api/',
+    // PdbApiUrlPrefix: 'https://www.ebi.ac.uk/pdbe/api/v2/',
+    // PdbApiUrlPrefix: 'https://wwwdev.ebi.ac.uk/pdbe/api/v2/',
+    PdbApiUrlPrefix: 'http://localhost:5000/',
     /** URL template for PDB structural data, '{pdb}' will be replaced by actual PDB ID. */
     PdbStructureUrlTemplate: 'https://www.ebi.ac.uk/pdbe/entry-files/{pdb}.bcif',
     /** Format for PDB structural data. */
     PdbStructureFormat: 'bcif',
 } satisfies MVSSnapshotProviderConfig;
 
-// /** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api) */
+// /** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api/v2) */
 // export function getDefaultMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
 //     const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
 //     const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
@@ -801,6 +886,15 @@ Questions:
     - support nested components in MVS
     - support simplified query algebra in MVS
 
+
+Weird cases:
+- ligand is not in preferred assembly:
+  - 5ele: entity 6 (PENTAETHYLENE GLYCOL), entity 7 (2-acetamido-2-deoxy-beta-D-glucopyranose)
+  - 7nys: entity 5 (CL) not in pref. assembly 2
+- Assembly with multiple operator groups applied to different chains: 3d12 assembly 1
+- Entity polymer type "other": 1ti9, 3ok2, 3ok4, 2mrx, 5dgf TODO decide how to show them in frontend
+- Entity polymer type "peptide nucleic acid": 2kvj
+- Entity polymer type "cyclic-pseudo-peptide": no real examples but we should future-proof
 
 -------------------------------------------------------
 
