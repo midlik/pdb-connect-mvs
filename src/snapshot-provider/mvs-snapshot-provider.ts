@@ -83,6 +83,10 @@ export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
 /** Level of opacity used for domain and ligand images */
 const FADED_OPACITY = 0.5;
 
+interface BuilderContext {
+    root: Builder.Root,
+    model: Builder.Parse,
+}
 
 export class MVSSnapshotProvider {
     constructor(
@@ -262,43 +266,45 @@ export class MVSSnapshotProvider {
             .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
             .parse({ format: this.config.PdbStructureFormat });
 
+        const ctx: BuilderContext = { root: builder, model: model };
+
         const description: string[] = [];
         switch (spec.kind) {
             case 'entry':
-                await this.loadEntry(model, description, spec.params);
+                await this.loadEntry(ctx, description, spec.params);
                 break;
             case 'assembly':
-                await this.loadAssembly(model, description, spec.params);
+                await this.loadAssembly(ctx, description, spec.params);
                 break;
             case 'entity':
-                await this.loadEntity(model, description, spec.params);
+                await this.loadEntity(ctx, description, spec.params);
                 break;
             case 'domain':
-                await this.loadDomain(model, description, spec.params);
+                await this.loadDomain(ctx, description, spec.params);
                 break;
             case 'ligand':
-                await this.loadLigand(model, description, spec.params);
+                await this.loadLigand(ctx, description, spec.params);
                 break;
             case 'modres':
-                await this.loadModres(model, description, spec.params);
+                await this.loadModres(ctx, description, spec.params);
                 break;
             case 'bfactor':
-                await this.loadBfactor(model, description, spec.params);
+                await this.loadBfactor(ctx, description, spec.params);
                 break;
             case 'validation':
-                await this.loadValidation(model, description, spec.params);
+                await this.loadValidation(ctx, description, spec.params);
                 break;
             case 'pdbconnect_summary_default':
-                await this.loadPdbconnectSummaryDefault(model, description, spec.params);
+                await this.loadPdbconnectSummaryDefault(ctx, description, spec.params);
                 break;
             case 'pdbconnect_summary_macromolecule':
-                await this.loadPdbconnectSummaryMacromolecule(model, description, spec.params, builder);
+                await this.loadPdbconnectSummaryMacromolecule(ctx, description, spec.params);
                 break;
             case 'pdbconnect_summary_all_ligands':
-                await this.loadPdbconnectSummaryAllLigands(model, description, spec.params);
+                await this.loadPdbconnectSummaryAllLigands(ctx, description, spec.params);
                 break;
             case 'pdbconnect_summary_ligand':
-                await this.loadPdbconnectSummaryLigand(model, description, spec.params);
+                await this.loadPdbconnectSummaryLigand(ctx, description, spec.params);
                 break;
         }
         description.push('---');
@@ -313,8 +319,8 @@ export class MVSSnapshotProvider {
         }
     }
 
-    private async loadEntry(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['entry']) {
-        const struct = model.modelStructure();
+    private async loadEntry(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['entry']) {
+        const struct = ctx.model.modelStructure();
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -330,10 +336,10 @@ export class MVSSnapshotProvider {
         outDescription.push('## Deposited model');
     }
 
-    private async loadAssembly(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['assembly']) {
+    private async loadAssembly(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['assembly']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const assInfo = assembliesInfo.find(ass => ass.assemblyId === params.assemblyId);
-        const struct = model.assemblyStructure({ assembly_id: params.assemblyId });
+        const struct = ctx.model.assemblyStructure({ assembly_id: params.assemblyId });
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -351,7 +357,7 @@ export class MVSSnapshotProvider {
         if (assInfo?.preferred) outDescription.push(`This is the preferred assembly.`);
     }
 
-    private async loadEntity(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['entity']) {
+    private async loadEntity(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['entity']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId;
 
@@ -367,7 +373,7 @@ export class MVSSnapshotProvider {
                 : (inAssemblies.length > 0 ? inAssemblies[0] : undefined);
         }
 
-        const struct = theAssembly !== undefined ? model.assemblyStructure({ assembly_id: theAssembly }) : model.modelStructure();
+        const struct = theAssembly !== undefined ? ctx.model.assemblyStructure({ assembly_id: theAssembly }) : ctx.model.modelStructure();
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -403,8 +409,8 @@ export class MVSSnapshotProvider {
         }
     }
 
-    private async loadDomain(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['domain']) {
-        const struct = model.modelStructure();
+    private async loadDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['domain']) {
+        const struct = ctx.model.modelStructure();
 
         const coverages = await this.dataProvider.authChainCoverages(params.entry);
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
@@ -444,7 +450,7 @@ export class MVSSnapshotProvider {
         );
     }
 
-    private async loadLigand(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['ligand']) {
+    private async loadLigand(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['ligand']) {
         const entities = await this.dataProvider.entities(params.entry);
         const entityRecord = Object.values(entities).find(ent => ent.compIds.length === 1 && ent.compIds[0] === params.compId);
         if (entityRecord === undefined) {
@@ -462,7 +468,7 @@ export class MVSSnapshotProvider {
             labelAsymId = entityRecord.chains[0];
         }
 
-        const struct = model.modelStructure();
+        const struct = ctx.model.modelStructure();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
@@ -494,11 +500,11 @@ export class MVSSnapshotProvider {
         outDescription.push(`Showing ligand **${entityRecord.name}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}] in the deposited model.`);
     }
 
-    private async loadModres(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['modres']) {
+    private async loadModres(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['modres']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId; // preferred assembly
 
-        const struct = preferredAssembly !== undefined ? model.assemblyStructure({ assembly_id: preferredAssembly }) : model.modelStructure();
+        const struct = preferredAssembly !== undefined ? ctx.model.assemblyStructure({ assembly_id: preferredAssembly }) : ctx.model.modelStructure();
         struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -529,8 +535,8 @@ export class MVSSnapshotProvider {
         }
     }
 
-    private async loadBfactor(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['bfactor']) {
-        const struct = model.modelStructure();
+    private async loadBfactor(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['bfactor']) {
+        const struct = ctx.model.modelStructure();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
@@ -556,8 +562,8 @@ export class MVSSnapshotProvider {
         outDescription.push(`Showing B-factor for the deposited model, colored by Plasma color scheme (0 = blue, 120 = yellow). Values above 120 are clipped.`);
     }
 
-    private async loadValidation(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['validation']) {
-        const struct = model.modelStructure();
+    private async loadValidation(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['validation']) {
+        const struct = ctx.model.modelStructure();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
@@ -612,12 +618,12 @@ export class MVSSnapshotProvider {
         }
     }
 
-    private async loadPdbconnectSummaryDefault(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
+    private async loadPdbconnectSummaryDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
             (await this.getPreferredAssembly(params.entry)).assemblyId
             : params.assemblyId;
 
-        const struct = displayedAssembly === MODEL ? model.modelStructure() : model.assemblyStructure({ assembly_id: displayedAssembly });
+        const struct = displayedAssembly === MODEL ? ctx.model.modelStructure() : ctx.model.assemblyStructure({ assembly_id: displayedAssembly });
         // struct.component().focus();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -642,10 +648,10 @@ export class MVSSnapshotProvider {
             outDescription.push(`## Complex ${displayedAssembly}`);
         }
         outDescription.push(`This is complex (assembly) ${displayedAssembly}.`);
-        return struct;
+        return { ...ctx, struct };
     }
 
-    private async loadPdbconnectSummaryMacromolecule(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule'], builder: Builder.Root) {
+    private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
             (await this.getPreferredAssembly(params.entry)).assemblyId
             : params.assemblyId;
@@ -664,7 +670,7 @@ export class MVSSnapshotProvider {
             }
         }
 
-        const struct = displayedAssembly === MODEL ? model.modelStructure() : model.assemblyStructure({ assembly_id: displayedAssembly });
+        const struct = displayedAssembly === MODEL ? ctx.model.modelStructure() : ctx.model.assemblyStructure({ assembly_id: displayedAssembly });
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
@@ -695,7 +701,7 @@ export class MVSSnapshotProvider {
         for (const repr of atomicRepresentations(entityRepresentations)) {
             applyElementColors(repr);
         }
-        builder.animation({})
+        ctx.root.animation({})
             .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
             .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
         // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
@@ -707,27 +713,32 @@ export class MVSSnapshotProvider {
             outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
     }
-    private async loadPdbconnectSummaryAllLigands(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
+
+    private async loadPdbconnectSummaryAllLigands(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
             (await this.getPreferredAssembly(params.entry)).assemblyId
             : params.assemblyId;
-        const struct = await this.loadPdbconnectSummaryDefault(model, [], { entry: params.entry, assemblyId: displayedAssembly });
-        // TODO refactor this ugliness with BuilderContext
-        
+        const ctx2 = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: displayedAssembly });
+
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
         for (const entityId in entities) {
             const entity = entities[entityId];
             const entityColor = entityColors[entityId];
             if (entityIsLigand(entity)) {
-                struct
+                ctx2.struct
                     .component({ selector: { label_entity_id: entity.id } })
                     .representation({ type: 'spacefill' })
                     .color({ color: entityColor });
             }
         }
+
+        outDescription.push(`## All ligands`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`Overview of all ligands in ${assemblyText}.`);
     }
-    private async loadPdbconnectSummaryLigand(model: Builder.Parse, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
+
+    private async loadPdbconnectSummaryLigand(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
             (await this.getPreferredAssembly(params.entry)).assemblyId
             : params.assemblyId;
@@ -746,10 +757,9 @@ export class MVSSnapshotProvider {
             }
         }
 
+        const ctx2 = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: displayedAssembly });
 
-        const struct = await this.loadPdbconnectSummaryDefault(model, [], { entry: params.entry, assemblyId: displayedAssembly });
-
-        struct.component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } }).focus();
+        ctx2.struct.component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } }).focus();
 
         outDescription.push(`## Ligand entity ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
@@ -758,6 +768,7 @@ export class MVSSnapshotProvider {
             outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
     }
+
     private async getPreferredAssembly(entryId: string) {
         const assemblies = await this.dataProvider.assemblies(entryId);
         const preferred = assemblies.find(ass => ass.preferred);
