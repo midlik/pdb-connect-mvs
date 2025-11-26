@@ -25,13 +25,13 @@ type SnapshotSpecParams = {
     pdbconnect_summary_default: {
         /** PDB ID */
         entry: string,
-        /** Assembly ID (or `'preferred'` for preferred assembly) */
+        /** Assembly ID (or 'preferred' for preferred assembly) */
         assemblyId: string,
     },
     pdbconnect_summary_macromolecule: {
         /** PDB ID */
         entry: string,
-        /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
         assemblyId: string,
         /** Entity ID of the macromolecule (polymer or branched) entity */
         entityId: string,
@@ -43,13 +43,13 @@ type SnapshotSpecParams = {
     pdbconnect_summary_all_ligands: {
         /** PDB ID */
         entry: string,
-        /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
         assemblyId: string,
     },
     pdbconnect_summary_ligand: {
         /** PDB ID */
         entry: string,
-        /** Assembly ID (or `'preferred'` for preferred assembly, or `'model'` for deposited model) */
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
         assemblyId: string,
         /** Entity ID of the ligand entity */
         entityId: string,
@@ -58,12 +58,35 @@ type SnapshotSpecParams = {
         /** `undefined` for showing first instance of the entity */
         instanceId?: string,
     },
+    pdbconnect_summary_domains_default: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+    },
+    pdbconnect_summary_domains_in_source: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+        /** Source database (CATH | SCOP | Pfam) */
+        source: string,
+    },
+    pdbconnect_summary_domain: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+        /** Source database (CATH | SCOP | Pfam) */
+        source: string,
+        /** Domain family ID (e.g. '1.10.630.10') */
+        familyId: string,
+        /** Chain identifier (label_asym_id) */
+        labelAsymId: string,
+        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
+        instanceId?: string,
+    },
 }
-/** Special value for `assemblyId` meaning that the preferred assembly should be used. */
-const PREFERRED = 'preferred';
-
-/** Special value for `assemblyId` meaning that the deposited model should be used instead of any assembly. */
-const MODEL = 'model';
 
 type SnapshotKind = keyof SnapshotSpecParams;
 const SnapshotKinds = [
@@ -72,12 +95,22 @@ const SnapshotKinds = [
     'pdbconnect_summary_macromolecule',
     'pdbconnect_summary_all_ligands',
     'pdbconnect_summary_ligand',
+    'pdbconnect_summary_domains_default',
+    'pdbconnect_summary_domains_in_source',
+    'pdbconnect_summary_domain',
 ] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     TKind extends SnapshotKind
     ? { kind: TKind, params: SnapshotSpecParams[TKind], name: string }
     : never; // extends clause needed to create discriminated union type properly
+
+
+/** Special value for `assemblyId` meaning that the preferred assembly should be used. */
+const PREFERRED = 'preferred';
+
+/** Special value for `assemblyId` meaning that the deposited model should be used instead of any assembly. */
+const MODEL = 'model';
 
 
 /** Level of opacity used for domain and ligand images */
@@ -246,6 +279,45 @@ export class MVSSnapshotProvider {
                 }
                 break;
             }
+            case 'pdbconnect_summary_domains_default': {
+                out.push({ kind: 'pdbconnect_summary_domains_default', name: `All domains`, params: { entry: entryId, assemblyId: PREFERRED } });
+                break;
+            }
+            case 'pdbconnect_summary_domains_in_source': {
+                const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
+                for (const source in domains) {
+                    out.push({ kind: 'pdbconnect_summary_domains_in_source', name: `Domains in ${source}`, params: { entry: entryId, assemblyId: PREFERRED, source: source } });
+                }
+                break;
+            }
+            case 'pdbconnect_summary_domain': {
+                const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
+                const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
+                const modelData = await this.getModel(entryId);
+                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+                for (const source in domains) {
+                    const srcDomains = domains[source];
+                    for (const familyId in srcDomains) {
+                        const famDomains = srcDomains[familyId];
+                        for (const entityId in famDomains) {
+                            const entDomains = famDomains[entityId];
+                            for (const domain of entDomains) {
+                                const labelAsymId = domain.chunks[0].chainId;
+                                let instances: (string | undefined)[] = chainInstancesInfo[preferredAssembly].operatorsPerChain[labelAsymId];
+                                if (instances === undefined || instances.length === 0) instances = [undefined];
+                                for (const instanceId of instances) {
+                                    out.push({
+                                        kind: 'pdbconnect_summary_domain',
+                                        name: `Domain from ${source} ${familyId} ${domain.id} (label_asym_id ${labelAsymId},  ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
+                                        params: { entry: entryId, assemblyId: PREFERRED, source, familyId, labelAsymId, instanceId: undefined },
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }
@@ -305,6 +377,15 @@ export class MVSSnapshotProvider {
                 break;
             case 'pdbconnect_summary_ligand':
                 await this.loadPdbconnectSummaryLigand(ctx, description, spec.params);
+                break;
+            case 'pdbconnect_summary_domains_default':
+                await this.loadPdbconnectSummaryDomainsDefault(ctx, description, spec.params);
+                break;
+            case 'pdbconnect_summary_domains_in_source':
+                await this.loadPdbconnectSummaryDomainsInSource(ctx, description, spec.params);
+                break;
+            case 'pdbconnect_summary_domain':
+                await this.loadPdbconnectSummaryDomain(ctx, description, spec.params);
                 break;
         }
         description.push('---');
@@ -767,6 +848,18 @@ export class MVSSnapshotProvider {
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
             outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
+    }
+
+    private async loadPdbconnectSummaryDomainsDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_default']) {
+        throw new Error('NotImplementedError')
+    }
+
+    private async loadPdbconnectSummaryDomainsInSource(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_in_source']) {
+        throw new Error('NotImplementedError')
+    }
+
+    private async loadPdbconnectSummaryDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domain']) {
+        throw new Error('NotImplementedError')
     }
 
     private async getPreferredAssembly(entryId: string) {

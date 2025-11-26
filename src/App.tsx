@@ -104,7 +104,7 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
     }, [model, entryId]);
 
     const kinds = model.mvsProvider.listSnapshotKinds();
-    const [category, setCategory] = React.useState<string>('pdbconnect_summary_all_ligands');
+    const [category, setCategory] = React.useState<string>('pdbconnect_summary_domains_default');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
