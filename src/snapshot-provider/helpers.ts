@@ -226,6 +226,18 @@ export function getDomainColors(domains: { [source: string]: { [family: string]:
     return out;
 }
 
+export function getDomainFamilyColors(domains: { [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }) {
+    // Ignoring the possibility of families from different sources having the same ID (e.g. CATH and CATH-B)
+    const colorIterator = cycleIterator(ANNOTATION_COLORS);
+    const out: { [familyId: string]: ColorT } = {};
+    for (const [src, srcDomains] of Object.entries(domains)) {
+        for (const familyId in srcDomains) {
+            out[familyId] = colorIterator.next().value!;
+        }
+    }
+    return out;
+}
+
 export function getModresColors(modifiedResidues: ModifiedResidueRecord[]) {
     const colorIterator = cycleIterator(MODRES_COLORS);
     const out: { [compId: string]: HexColorT } = {};

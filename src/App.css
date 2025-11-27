@@ -25,6 +25,8 @@
 
 .ViewButtons {
   margin-block: 16px;
+  max-height: 240px;
+  overflow-y: scroll;
 }
 
 .Description {

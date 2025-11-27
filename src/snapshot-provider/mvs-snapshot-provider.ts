@@ -1,9 +1,10 @@
 import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
+import { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getEntityColors, getModresColors, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
 import { MODEL, PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
@@ -23,10 +24,6 @@ export class MVSSnapshotProvider {
         public readonly modelProvider: IModelProvider,
         public readonly config: MVSSnapshotProviderConfig,
     ) { }
-
-    listSnapshotKinds(): readonly SnapshotKind[] {
-        return SnapshotKinds;
-    }
 
     async getSnapshot(spec: SnapshotSpec, asMultistate: boolean): Promise<MVSData> {
         const builder = MVSData.createBuilder();
@@ -395,51 +392,16 @@ export class MVSSnapshotProvider {
         }
     }
 
-    private async loadPdbconnectSummaryDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
+    private async _loadPdbconnectBase(ctx: BuilderContext, params: { entry: string, assemblyId: string, ensureEntity?: string, ensureChain?: string }) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
             getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
 
-        const struct = displayedAssembly === MODEL ? ctx.model.modelStructure() : ctx.model.assemblyStructure({ assembly_id: displayedAssembly });
-        // struct.component().focus();
-
-        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const components = applyStandardComponents(struct, { modifiedResidues });
-        const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
-
-        const entities = await this.dataProvider.entities(params.entry);
-        const entityColors = getEntityColors(entities);
-        for (const repr of Object.values(representations)) {
-            applyEntityColors(repr, entityColors);
-        }
-        for (const repr of atomicRepresentations(representations)) {
-            applyElementColors(repr);
-        }
-        // TODO ensure default Molstar show-environment behavior uses either entity colors or all-gray -> PDBeMolstar does it somehow but now idea how (+ ideally increase bubble size)
-        // TODO Molstar: ball_and_stick size theme physical?
-        // TODO compute PCA to orient camera?
-
-        if (params.assemblyId === PREFERRED) {
-            outDescription.push(`## Preferred complex`);
-        } else {
-            outDescription.push(`## Complex ${displayedAssembly}`);
-        }
-        outDescription.push(`This is complex (assembly) ${displayedAssembly}.`);
-        return { ...ctx, struct };
-    }
-
-    private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
-        let displayedAssembly = params.assemblyId === PREFERRED ?
-            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
-            : params.assemblyId;
-
-        const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
-        const entityChains = entities[params.entityId].chains;
-
-        const modelData = await this.modelProvider.getModel(params.entry);
-        const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-
-        if (displayedAssembly !== MODEL) {
+        if (displayedAssembly !== MODEL && params.ensureEntity !== undefined) {
+            const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
+            const entityChains = entities[params.ensureEntity].chains;
+            const modelData = await this.modelProvider.getModel(params.entry);
+            const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
             // Find out if the assembly contains this entity and potentially fall back to deposited model)
             const entityPresent = entityChains.some(chain => chainInstancesInfo[displayedAssembly].operatorsPerChain[chain]?.length > 0);
             if (!entityPresent) {
@@ -447,27 +409,79 @@ export class MVSSnapshotProvider {
             }
         }
 
-        const struct = displayedAssembly === MODEL ? ctx.model.modelStructure() : ctx.model.assemblyStructure({ assembly_id: displayedAssembly });
+        if (displayedAssembly !== MODEL && params.ensureChain !== undefined) {
+            const modelData = await this.modelProvider.getModel(params.entry);
+            const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+            // Find out if the assembly contains this chain entity and potentially fall back to deposited model)
+            const chainsPresent = chainInstancesInfo[displayedAssembly].operatorsPerChain[params.ensureChain]?.length > 0;
+            if (!chainsPresent) {
+                displayedAssembly = MODEL;
+            }
+        }
 
+        const structure = displayedAssembly === MODEL ? ctx.model.modelStructure() : ctx.model.assemblyStructure({ assembly_id: displayedAssembly });
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const components = applyStandardComponents(struct, { modifiedResidues });
-        // TODO consider background structure display: white without opacity vs gray with opacity (consider hiding by size_factor in 3j3q)
-        // TODO prohibit cartoon quality 'lowest' (consider hiding by size_factor in 3j3q); or use coloring instead of adding reprs for entities
+        const components = applyStandardComponents(structure, { modifiedResidues });
         const representations = applyStandardRepresentations(components, { opacityFactor: 1 });
-        // const modelData = await this.getModel(params.entry);
-        // const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, displayedAssemblyId));
-        // const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity });
-        // for (const repr of Object.values(representations)) {
-        //     repr.color({ color: 'gray' });
+        // TODO Molstar: ball_and_stick size theme physical?
+        // TODO compute PCA to orient camera?
+
+        return {
+            ...ctx,
+            structure,
+            components,
+            representations,
+            metadata: { displayedAssembly, modifiedResidues },
+        };
+    }
+    private async loadPdbconnectSummaryDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default'] & { ensureEntity?: string, ensureChain?: string }) {
+        const base = await this._loadPdbconnectBase(ctx, params);
+        const entities = await this.dataProvider.entities(params.entry);
+        const entityColors = getEntityColors(entities);
+        for (const repr of Object.values(base.representations)) {
+            applyEntityColors(repr, entityColors);
+        }
+        for (const repr of atomicRepresentations(base.representations)) {
+            applyElementColors(repr);
+        }
+        // TODO ensure default Molstar show-environment behavior uses either entity colors or all-gray -> PDBeMolstar does it somehow but now idea how (+ ideally increase bubble size)
+
+        if (params.assemblyId === PREFERRED) {
+            outDescription.push(`## Preferred complex`);
+        } else {
+            outDescription.push(`## Complex ${base.metadata.displayedAssembly}`);
+        }
+        outDescription.push(`This is complex (assembly) ${base.metadata.displayedAssembly}.`);
+        return {
+            ...base,
+            metadata: {
+                ...base.metadata,
+                entities,
+                entityColors,
+            }
+        };
+    }
+
+    private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureEntity: params.entityId });
+        const { displayedAssembly, modifiedResidues } = base.metadata;
+
+        // TODO consider background structure display: white without opacity vs gray with opacity (consider hiding by size_factor in 3j3q)
+        // const modelData = await this.modelProvider.getModel(params.entry);
+        // const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, base.metadata.displayedAssembly));
+        // for (const repr of Object.values(base.representations)) {
+        //     repr.color({ color: 'gray' }).opacity({ opacity:bgOpacity });
         // }
 
+        const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it?
+        const entityChains = entities[params.entityId].chains;
         const entityColors = getEntityColors(entities);
         const entityType = decideEntityType(entities[params.entityId]);
         const highlightedChain = params.labelAsymId ?? entityChains[0];
-        const highlightedInstance = params.instanceId
-            ?? (displayedAssembly === MODEL ? undefined : chainInstancesInfo[displayedAssembly].operatorsPerChain[highlightedChain][0]);
+        const highlightedInstance = params.instanceId;
 
-        const entityComponents = applyStandardComponentsForChain(struct, highlightedChain, highlightedInstance, entityType, { modifiedResidues });
+        // TODO prohibit cartoon quality 'lowest' (consider hiding by size_factor in 3j3q); or use coloring instead of adding reprs for entities
+        const entityComponents = applyStandardComponentsForChain(base.structure, highlightedChain, highlightedInstance, entityType, { modifiedResidues });
         for (const comp of Object.values(entityComponents)) {
             comp.focus();
         }
@@ -478,7 +492,7 @@ export class MVSSnapshotProvider {
         for (const repr of atomicRepresentations(entityRepresentations)) {
             applyElementColors(repr);
         }
-        ctx.root.animation({})
+        base.root.animation({})
             .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
             .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
         // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
@@ -492,10 +506,8 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryAllLigands(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
-        let displayedAssembly = params.assemblyId === PREFERRED ?
-            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
-            : params.assemblyId;
-        const ctx2 = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: displayedAssembly });
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId });
+        const { displayedAssembly } = base.metadata;
 
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
@@ -503,7 +515,7 @@ export class MVSSnapshotProvider {
             const entity = entities[entityId];
             const entityColor = entityColors[entityId];
             if (entityIsLigand(entity)) {
-                ctx2.struct
+                base.structure
                     .component({ selector: { label_entity_id: entity.id } })
                     .representation({ type: 'spacefill' })
                     .color({ color: entityColor });
@@ -516,27 +528,10 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryLigand(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
-        let displayedAssembly = params.assemblyId === PREFERRED ?
-            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
-            : params.assemblyId;
+        const base = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+        const { displayedAssembly, entities } = base.metadata;
 
-        const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
-        const entityChains = entities[params.entityId].chains;
-
-        const modelData = await this.modelProvider.getModel(params.entry);
-        const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-
-        if (displayedAssembly !== MODEL) {
-            // Find out if the assembly contains this entity and potentially fall back to deposited model)
-            const entityPresent = entityChains.some(chain => chainInstancesInfo[displayedAssembly].operatorsPerChain[chain]?.length > 0);
-            if (!entityPresent) {
-                displayedAssembly = MODEL;
-            }
-        }
-
-        const ctx2 = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: displayedAssembly });
-
-        ctx2.struct.component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } }).focus();
+        base.structure.component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } }).focus();
 
         outDescription.push(`## Ligand entity ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
@@ -547,18 +542,63 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryDomainsDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_default']) {
-        // TODO implement
-        throw new Error('NotImplementedError')
+        const base = await this._loadPdbconnectBase(ctx, params);
+        const { displayedAssembly } = base.metadata;
+        outDescription.push(`## Domains - default view`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`Showing ${assemblyText} (nothing highlighted here, select domain source or specific domain to see highlights).`);
     }
 
     private async loadPdbconnectSummaryDomainsInSource(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_in_source']) {
-        // TODO implement
-        throw new Error('NotImplementedError')
+        const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
+        const domainFamilyColors = getDomainFamilyColors(domainInfo); // TODO cache? (incl. many things that need to be computed just once, e.g. getChainInfo)
+
+        const base = await this._loadPdbconnectBase(ctx, params);
+        const { displayedAssembly } = base.metadata;
+
+        const srcDomains = domainInfo[params.source];
+        for (const familyId in srcDomains) {
+            const famDomains = srcDomains[familyId];
+            const color = domainFamilyColors[familyId];
+            for (const entityId in famDomains) {
+                const entDomains = famDomains[entityId];
+                for (const domain of entDomains) {
+                    const selector: ComponentExpressionT[] = domain.chunks.map(
+                        chunk => ({ label_asym_id: chunk.chainId, beg_label_seq_id: chunk.startResidue, end_label_seq_id: chunk.endResidue })
+                    );
+                    base.representations.polymerCartoon?.color({ selector, color });
+                    base.representations.nonstandardSticks?.color({ selector, color });
+                }
+            }
+        }
+
+        outDescription.push(`## Domains in ${params.source}`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`Showing all domains from source ${params.source} in ${assemblyText}.`);
     }
 
     private async loadPdbconnectSummaryDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domain']) {
-        // TODO implement
-        throw new Error('NotImplementedError')
+        const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
+        const domainFamilyColors = getDomainFamilyColors(domainInfo);
+        const domain = domainInfo[params.source][params.familyId][params.entityId].find(dom => dom.id === params.domainId);
+        const labelAsymId = domain?.chunks[0].chainId;
+
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: labelAsymId });
+        const { displayedAssembly } = base.metadata;
+
+        if (domain) {
+            const color = domainFamilyColors[domain.family];
+            const selector: ComponentExpressionT[] = domain.chunks.map(
+                chunk => ({ label_asym_id: chunk.chainId, beg_label_seq_id: chunk.startResidue, end_label_seq_id: chunk.endResidue, instance_id: params.instanceId })
+            );
+            base.representations.polymerCartoon?.color({ selector, color });
+            base.representations.nonstandardSticks?.color({ selector, color });
+            base.structure.component({ selector }).focus();
+        }
+
+        outDescription.push(`## Domain ${params.domainId}`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`Showing ${params.source} ${params.familyId} domain ${params.domainId} in ${assemblyText}.`);
     }
 }
 
@@ -683,6 +723,7 @@ Weird cases:
 - Entity polymer type "peptide nucleic acid": 2kvj
 - Entity polymer type "cyclic-pseudo-peptide": no real examples but we should future-proof
 - Symmetry operators with multiple operations in preferred assembly: 1m4x (ASM-1-61...)
+- Multiple domain instances in one chain: 2ww8, 1n26
 
 -------------------------------------------------------
 

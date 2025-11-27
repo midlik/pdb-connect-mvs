@@ -184,7 +184,7 @@ export class MVSSnapshotListProvider {
                                     out.push({
                                         kind: 'pdbconnect_summary_domain',
                                         name: `Domain from ${source} ${familyId} ${domain.id} (label_asym_id ${labelAsymId},  ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
-                                        params: { entry: entryId, assemblyId: PREFERRED, source, familyId, labelAsymId, instanceId: undefined },
+                                        params: { entry: entryId, assemblyId: PREFERRED, source, familyId, entityId, domainId: domain.id, instanceId },
                                     });
                                 }
                             }

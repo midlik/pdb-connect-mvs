@@ -67,8 +67,10 @@ export type SnapshotSpecParams = {
         source: string,
         /** Domain family ID (e.g. '1.10.630.10') */
         familyId: string,
-        /** Chain identifier (label_asym_id) */
-        labelAsymId: string,
+        /** Entity identifier (label_entity_id) */
+        entityId: string,
+        /** Domain identifier (e.g. '1n26A01') */
+        domainId: string,
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId?: string,
     },

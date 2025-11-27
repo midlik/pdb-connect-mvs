@@ -113,8 +113,9 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
         model.snapshotListProvider.listSnapshots(entryId).then(setSnapshots);
     }, [model, entryId]);
 
-    const kinds = model.snapshotProvider.listSnapshotKinds();
-    const [category, setCategory] = useState<string>('pdbconnect_summary_domains_default');
+    const kinds = model.snapshotListProvider.listSnapshotKinds();
+    // const [category, setCategory] = useState<string>(kinds[0]);
+    const [category, setCategory] = useState<string>('pdbconnect_summary_domains_in_source');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
