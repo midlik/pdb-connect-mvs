@@ -10,7 +10,21 @@ export interface IModelProvider {
 
 
 export class MolstarModelProvider implements IModelProvider {
+    // Expecting that this will be used for one entry only, so this 1-model caching should be sufficient
+    private _cachedEntryId?: string;
+    private _cachedModel?: Model;
+
     async getModel(entryId: string): Promise<Model> {
+        if (entryId === this._cachedEntryId && this._cachedModel) {
+            return this._cachedModel;
+        }
+        const model = await this._getModel(entryId);
+        this._cachedEntryId = entryId;
+        this._cachedModel = model;
+        return model;
+    }
+
+    private async _getModel(entryId: string): Promise<Model> {
         const url = `https://www.ebi.ac.uk/pdbe/entry-files/${entryId}.bcif`
         const response = await fetch(url);
         if (!response.ok) {

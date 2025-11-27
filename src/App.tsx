@@ -1,12 +1,14 @@
 import { MenuItem, Select } from '@mui/material';
 import Button from '@mui/material/Button';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { BehaviorSubject } from 'rxjs';
 import './App.css';
 import { ApiDataProvider } from './snapshot-provider/data-provider';
 import { MolstarModelProvider } from './snapshot-provider/model-provider';
-import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, MVSSnapshotProviderConfig, SnapshotSpec } from './snapshot-provider/mvs-snapshot-provider';
+import { MVSSnapshotListProvider } from './snapshot-provider/mvs-snapshot-list-provider';
+import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, MVSSnapshotProviderConfig } from './snapshot-provider/mvs-snapshot-provider';
+import { SnapshotSpec } from './snapshot-provider/mvs-snapshot-types';
 
 
 type Molstar = typeof import('molstar/lib/apps/viewer');
@@ -42,13 +44,21 @@ export default App;
 
 class AppModel {
     viewer?: Viewer;
-    mvsProvider: MVSSnapshotProvider = getMVSSnapshotProvider({
-        // PdbApiUrlPrefix: 'http://localhost:3000/local_data/api',
-        // PdbStructureUrlTemplate: 'http://localhost:3000/local_data/structures/{pdb}.bcif',
-    });
+    readonly snapshotProvider: MVSSnapshotProvider;
+    readonly snapshotListProvider: MVSSnapshotListProvider;
     readonly snapshotSpec = new BehaviorSubject<SnapshotSpec | undefined>(undefined);
     readonly snapshot = new BehaviorSubject<MVSData | undefined>(undefined);
     readonly isBusy = new BehaviorSubject<boolean>(false);
+
+    constructor() {
+        const { snapshotProvider, snapshotListProvider } = getMVSSnapshotProviders({
+            PdbApiUrlPrefix: 'http://localhost:5000/',
+            // PdbApiUrlPrefix: 'http://localhost:3000/local_data/api',
+            // PdbStructureUrlTemplate: 'http://localhost:3000/local_data/structures/{pdb}.bcif',
+        });
+        this.snapshotProvider = snapshotProvider;
+        this.snapshotListProvider = snapshotListProvider;
+    }
 
     async initViewer(target: HTMLElement) {
         const viewer = await Molstar.Viewer.create(target, {
@@ -68,7 +78,7 @@ class AppModel {
         if (!this.viewer) return;
         this.isBusy.next(true);
         try {
-            let snapshot: MVSData = await this.mvsProvider.getSnapshot(snapshotSpec, false);
+            let snapshot: MVSData = await this.snapshotProvider.getSnapshot(snapshotSpec, false);
             snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly
             const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
             // console.log('mvsj', mvsj.length, mvsj)
@@ -100,11 +110,11 @@ function ViewerWindow({ model }: { model: AppModel }) {
 function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }) {
     const [snapshots, setSnapshots] = useState<SnapshotSpec[] | undefined>(undefined);
     useEffect(() => {
-        model.mvsProvider.listSnapshots(entryId).then(setSnapshots);
+        model.snapshotListProvider.listSnapshots(entryId).then(setSnapshots);
     }, [model, entryId]);
 
-    const kinds = model.mvsProvider.listSnapshotKinds();
-    const [category, setCategory] = React.useState<string>('pdbconnect_summary_domains_default');
+    const kinds = model.snapshotProvider.listSnapshotKinds();
+    const [category, setCategory] = useState<string>('pdbconnect_summary_domains_default');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
@@ -175,10 +185,12 @@ function Description({ model }: { model: AppModel }) {
 }
 
 
-/** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api/v2) */
-function getMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
+/** Return a new MVSSnapshotProvider and MVSSnapshotListProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api/v2) */
+function getMVSSnapshotProviders(config?: Partial<MVSSnapshotProviderConfig>) {
     const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
     const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
     const modelProvider = new MolstarModelProvider();
-    return new MVSSnapshotProvider(dataProvider, modelProvider, fullConfig);
+    const snapshotProvider = new MVSSnapshotProvider(dataProvider, modelProvider, fullConfig);
+    const snapshotListProvider = new MVSSnapshotListProvider(dataProvider, modelProvider);
+    return { snapshotProvider, snapshotListProvider };
 }

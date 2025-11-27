@@ -1,116 +1,12 @@
 import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
-import { Model } from 'molstar/lib/mol-model/structure';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getEntityColors, getModresColors, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getEntityColors, getModresColors, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
+import { MODEL, PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
-
-
-const ValidationTypes = ['issue_count', 'bond_angles', 'clashes', 'sidechain_outliers', 'symm_clashes', 'planes'] as const;
-type ValidationType = (typeof ValidationTypes)[number];
-
-type SnapshotSpecParams = {
-    // TODO think about how to deal with mandatory (hopefully exhaustible) params vs optional params
-    entry: { entry: string },
-    assembly: { entry: string, assemblyId: string },
-    entity: { entry: string, entityId: string, assemblyId?: string },
-    domain: { entry: string, source: string, familyId: string, entityId: string }, // source / family / entity / chain / instance
-    ligand: { entry: string, compId: string, labelAsymId?: string },
-    modres: { entry: string, compId: string },
-    bfactor: { entry: string },
-    validation: { entry: string, validation_type: ValidationType },
-    pdbconnect_summary_default: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly) */
-        assemblyId: string,
-    },
-    pdbconnect_summary_macromolecule: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
-        assemblyId: string,
-        /** Entity ID of the macromolecule (polymer or branched) entity */
-        entityId: string,
-        /** `undefined` for showing first instance of the entity */
-        labelAsymId?: string,
-        /** `undefined` for showing first instance of the entity */
-        instanceId?: string,
-    },
-    pdbconnect_summary_all_ligands: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
-        assemblyId: string,
-    },
-    pdbconnect_summary_ligand: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
-        assemblyId: string,
-        /** Entity ID of the ligand entity */
-        entityId: string,
-        /** `undefined` for showing first instance of the entity */
-        labelAsymId?: string,
-        /** `undefined` for showing first instance of the entity */
-        instanceId?: string,
-    },
-    pdbconnect_summary_domains_default: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
-        assemblyId: string,
-    },
-    pdbconnect_summary_domains_in_source: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
-        assemblyId: string,
-        /** Source database (CATH | SCOP | Pfam) */
-        source: string,
-    },
-    pdbconnect_summary_domain: {
-        /** PDB ID */
-        entry: string,
-        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
-        assemblyId: string,
-        /** Source database (CATH | SCOP | Pfam) */
-        source: string,
-        /** Domain family ID (e.g. '1.10.630.10') */
-        familyId: string,
-        /** Chain identifier (label_asym_id) */
-        labelAsymId: string,
-        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
-        instanceId?: string,
-    },
-}
-
-type SnapshotKind = keyof SnapshotSpecParams;
-const SnapshotKinds = [
-    'entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation',
-    'pdbconnect_summary_default',
-    'pdbconnect_summary_macromolecule',
-    'pdbconnect_summary_all_ligands',
-    'pdbconnect_summary_ligand',
-    'pdbconnect_summary_domains_default',
-    'pdbconnect_summary_domains_in_source',
-    'pdbconnect_summary_domain',
-] as const satisfies readonly SnapshotKind[];
-
-export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
-    TKind extends SnapshotKind
-    ? { kind: TKind, params: SnapshotSpecParams[TKind], name: string }
-    : never; // extends clause needed to create discriminated union type properly
-
-
-/** Special value for `assemblyId` meaning that the preferred assembly should be used. */
-const PREFERRED = 'preferred';
-
-/** Special value for `assemblyId` meaning that the deposited model should be used instead of any assembly. */
-const MODEL = 'model';
 
 
 /** Level of opacity used for domain and ligand images */
@@ -130,206 +26,6 @@ export class MVSSnapshotProvider {
 
     listSnapshotKinds(): readonly SnapshotKind[] {
         return SnapshotKinds;
-    }
-
-    // Expecting that this will be used for one entry only, so this 1-model caching should be sufficient
-    private _cachedEntryId?: string;
-    private _cachedModel?: Model;
-    private async getModel(entryId: string): Promise<Model> {
-        if (entryId !== this._cachedEntryId || !this._cachedModel) {
-            this._cachedEntryId = entryId;
-            this._cachedModel = await this.modelProvider.getModel(entryId);
-        }
-        return this._cachedModel;
-    }
-
-    async listSnapshots(entryId: string, kind?: SnapshotKind): Promise<SnapshotSpec[]> {
-        if (kind === undefined) return this.listAllSnapshots(entryId);
-        const out: SnapshotSpec[] = [];
-        switch (kind) {
-            case 'entry': {
-                out.push({ kind: 'entry', name: `Entry`, params: { entry: entryId } });
-                break;
-            }
-            case 'assembly': {
-                const assemblies = await this.dataProvider.assemblies(entryId);
-                for (const ass of assemblies) {
-                    out.push({ kind: 'assembly', name: `Assembly ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
-                }
-                break;
-            }
-            case 'entity': {
-                const entities = await this.dataProvider.entities(entryId);
-                for (const ent in entities) {
-                    if (entities[ent].type === 'water') continue;
-                    out.push({ kind: 'entity', name: `Entity ${ent}`, params: { entry: entryId, entityId: ent, assemblyId: undefined } });
-                }
-                break;
-            }
-            case 'domain': {
-                const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
-                for (const source in domains) {
-                    const srcDomains = domains[source];
-                    for (const familyId in srcDomains) {
-                        const famDomains = srcDomains[familyId];
-                        for (const entityId in famDomains) {
-                            out.push({ kind: 'domain', name: `Domain ${source} ${familyId} in entity ${entityId}`, params: { entry: entryId, source, familyId, entityId } });
-                            // const entDomains = famDomains[entityId];
-                            // for (const domain of entDomains) {
-                            //     out.push({ kind: 'domain', name: `Domain ${domain.id}: ${source} ${familyId} in entity ${entityId}`, params: { entry: entryId, source, entityId, familyId } });
-                            //     // TODO allow all-domain-in-chain view (with specific chain or auto) and specific-domain view?
-                            // }
-                        }
-                    }
-                }
-                break;
-            }
-            case 'ligand': {
-                const entities = await this.dataProvider.entities(entryId); // thank you switch for not letting me have the same var name again
-                for (const ent in entities) {
-                    const entityRecord = entities[ent];
-                    if (entityIsLigand(entityRecord)) {
-                        const compId = entityRecord.compIds[0];
-                        out.push({ kind: 'ligand', name: `Ligand ${compId}`, params: { entry: entryId, compId, labelAsymId: undefined } });
-                    }
-                }
-                break;
-            }
-            case 'modres': {
-                const modifiedResidues = await this.dataProvider.modifiedResidues(entryId);
-                for (const compId of uniqueModresCompIds(modifiedResidues)) {
-                    out.push({ kind: 'modres', name: `Modified residue ${compId}`, params: { entry: entryId, compId } });
-                }
-                break;
-            }
-            case 'bfactor': {
-                const experimentalMethods = await this.dataProvider.experimentalMethods(entryId);
-                const isXray = experimentalMethods.some(method => method.toLowerCase().includes('diffraction'));
-                if (isXray) {
-                    out.push({ kind: 'bfactor', name: `B-factor`, params: { entry: entryId } });
-                }
-                break;
-            }
-            case 'validation': {
-                for (const validationType of ValidationTypes) {
-                    out.push({ kind: 'validation', name: `Validation (${validationType})`, params: { entry: entryId, validation_type: validationType } });
-                }
-                break;
-            }
-            case 'pdbconnect_summary_default': {
-                const assemblies = await this.dataProvider.assemblies(entryId);
-                const preferred = assemblies.find(ass => ass.preferred);
-                if (preferred) {
-                    out.push({ kind: 'pdbconnect_summary_default', name: `Preferred complex`, params: { entry: entryId, assemblyId: PREFERRED } });
-                }
-                for (const ass of assemblies) {
-                    out.push({ kind: 'pdbconnect_summary_default', name: `Complex ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
-                }
-                break;
-            }
-            case 'pdbconnect_summary_macromolecule': {
-                const entities = await this.dataProvider.entities(entryId);
-                const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
-                const modelData = await this.getModel(entryId);
-                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-                for (const entityId in entities) {
-                    const entity = entities[entityId];
-                    if (entityIsMacromolecule(entity)) {
-                        // Model-agnostic version:
-                        // out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: undefined, instanceId: undefined } });
-                        // for (const labelAsymId of entity.chains) {
-                        //     out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
-                        // }
-                        let instances = listEntityInstancesInAssembly(entity, chainInstancesInfo[preferredAssembly]);
-                        if (instances.length === 0) instances = listEntityInstancesInModel(entity);
-                        for (const instance of instances) {
-                            out.push({
-                                kind: 'pdbconnect_summary_macromolecule',
-                                name: `Entity ${entityId} (label_asym_id ${instance.labelAsymId}, ${instance.instanceId ? `instance_id ${instance.instanceId}` : 'model'})`,
-                                params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: instance.labelAsymId, instanceId: instance.instanceId }
-                            });
-                        }
-                    }
-                }
-                break;
-            }
-            case 'pdbconnect_summary_all_ligands': {
-                out.push({ kind: 'pdbconnect_summary_all_ligands', name: `All ligands`, params: { entry: entryId, assemblyId: PREFERRED } });
-                break;
-            }
-            case 'pdbconnect_summary_ligand': {
-                const entities = await this.dataProvider.entities(entryId);
-                const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
-                const modelData = await this.getModel(entryId);
-                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-                for (const entityId in entities) {
-                    const entity = entities[entityId];
-                    if (entityIsLigand(entity)) {
-                        const compId = entity.compIds[0];
-                        let instances = listEntityInstancesInAssembly(entity, chainInstancesInfo[preferredAssembly]);
-                        if (instances.length === 0) instances = listEntityInstancesInModel(entity);
-                        for (const instance of instances) {
-                            out.push({
-                                kind: 'pdbconnect_summary_ligand',
-                                name: `Ligand entity ${entityId} (${compId}, label_asym_id ${instance.labelAsymId}, ${instance.instanceId ? `instance_id ${instance.instanceId}` : 'model'})`,
-                                params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: instance.labelAsymId, instanceId: instance.instanceId }
-                            });
-                        }
-                    }
-                }
-                break;
-            }
-            case 'pdbconnect_summary_domains_default': {
-                out.push({ kind: 'pdbconnect_summary_domains_default', name: `All domains`, params: { entry: entryId, assemblyId: PREFERRED } });
-                break;
-            }
-            case 'pdbconnect_summary_domains_in_source': {
-                const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
-                for (const source in domains) {
-                    out.push({ kind: 'pdbconnect_summary_domains_in_source', name: `Domains in ${source}`, params: { entry: entryId, assemblyId: PREFERRED, source: source } });
-                }
-                break;
-            }
-            case 'pdbconnect_summary_domain': {
-                const preferredAssembly = (await this.getPreferredAssembly(entryId)).assemblyId;
-                const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
-                const modelData = await this.getModel(entryId);
-                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-                for (const source in domains) {
-                    const srcDomains = domains[source];
-                    for (const familyId in srcDomains) {
-                        const famDomains = srcDomains[familyId];
-                        for (const entityId in famDomains) {
-                            const entDomains = famDomains[entityId];
-                            for (const domain of entDomains) {
-                                const labelAsymId = domain.chunks[0].chainId;
-                                let instances: (string | undefined)[] = chainInstancesInfo[preferredAssembly].operatorsPerChain[labelAsymId];
-                                if (instances === undefined || instances.length === 0) instances = [undefined];
-                                for (const instanceId of instances) {
-                                    out.push({
-                                        kind: 'pdbconnect_summary_domain',
-                                        name: `Domain from ${source} ${familyId} ${domain.id} (label_asym_id ${labelAsymId},  ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
-                                        params: { entry: entryId, assemblyId: PREFERRED, source, familyId, labelAsymId, instanceId: undefined },
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-            default:
-                throw new Error(`Invalid snapshot kind: ${kind}`);
-        }
-        return out;
-    }
-
-    private async listAllSnapshots(entryId: string): Promise<SnapshotSpec[]> {
-        const out: SnapshotSpec[] = [];
-        for (const k of this.listSnapshotKinds()) {
-            out.push(...await this.listSnapshots(entryId, k));
-        }
-        return out;
     }
 
     async getSnapshot(spec: SnapshotSpec, asMultistate: boolean): Promise<MVSData> {
@@ -460,7 +156,7 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
 
-        const modelData = await this.getModel(params.entry);
+        const modelData = await this.modelProvider.getModel(params.entry);
         const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, theAssembly));
         const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity, skipComponents: ['water'] });
 
@@ -504,7 +200,7 @@ export class MVSSnapshotProvider {
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
 
-        const modelData = await this.getModel(params.entry);
+        const modelData = await this.modelProvider.getModel(params.entry);
         const chainInfo = getChainInfo(modelData);
         const chainsToShow = Object.keys(chainInfo).filter(c => chainInfo[c].authChainId === shownAuthChain);
         const entitiesInfo = await this.dataProvider.entities(params.entry);
@@ -554,7 +250,7 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
 
-        const modelData = await this.getModel(params.entry);
+        const modelData = await this.modelProvider.getModel(params.entry);
         const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, undefined));
         const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity, skipComponents: ['water'] });
 
@@ -591,7 +287,7 @@ export class MVSSnapshotProvider {
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
         const components = applyStandardComponents(struct, { modifiedResidues });
 
-        const modelData = await this.getModel(params.entry);
+        const modelData = await this.modelProvider.getModel(params.entry);
         const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, preferredAssembly));
         const representations = applyStandardRepresentations(components, { opacityFactor: bgOpacity, skipComponents: ['water'] });
 
@@ -701,7 +397,7 @@ export class MVSSnapshotProvider {
 
     private async loadPdbconnectSummaryDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
-            (await this.getPreferredAssembly(params.entry)).assemblyId
+            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
 
         const struct = displayedAssembly === MODEL ? ctx.model.modelStructure() : ctx.model.assemblyStructure({ assembly_id: displayedAssembly });
@@ -734,13 +430,13 @@ export class MVSSnapshotProvider {
 
     private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
-            (await this.getPreferredAssembly(params.entry)).assemblyId
+            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
 
         const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
         const entityChains = entities[params.entityId].chains;
 
-        const modelData = await this.getModel(params.entry);
+        const modelData = await this.modelProvider.getModel(params.entry);
         const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
 
         if (displayedAssembly !== MODEL) {
@@ -797,7 +493,7 @@ export class MVSSnapshotProvider {
 
     private async loadPdbconnectSummaryAllLigands(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
-            (await this.getPreferredAssembly(params.entry)).assemblyId
+            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
         const ctx2 = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: displayedAssembly });
 
@@ -821,13 +517,13 @@ export class MVSSnapshotProvider {
 
     private async loadPdbconnectSummaryLigand(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
-            (await this.getPreferredAssembly(params.entry)).assemblyId
+            getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
 
         const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
         const entityChains = entities[params.entityId].chains;
 
-        const modelData = await this.getModel(params.entry);
+        const modelData = await this.modelProvider.getModel(params.entry);
         const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
 
         if (displayedAssembly !== MODEL) {
@@ -851,22 +547,18 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryDomainsDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_default']) {
+        // TODO implement
         throw new Error('NotImplementedError')
     }
 
     private async loadPdbconnectSummaryDomainsInSource(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_in_source']) {
+        // TODO implement
         throw new Error('NotImplementedError')
     }
 
     private async loadPdbconnectSummaryDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domain']) {
+        // TODO implement
         throw new Error('NotImplementedError')
-    }
-
-    private async getPreferredAssembly(entryId: string) {
-        const assemblies = await this.dataProvider.assemblies(entryId);
-        const preferred = assemblies.find(ass => ass.preferred);
-        if (preferred === undefined) throw new Error(`Could not find preferred assembly for entry ${entryId}`);
-        return preferred;
     }
 }
 
@@ -906,21 +598,12 @@ export interface MVSSnapshotProviderConfig {
 }
 
 export const DefaultMVSSnapshotProviderConfig = {
-    // PdbApiUrlPrefix: 'https://www.ebi.ac.uk/pdbe/api/v2/',
-    // PdbApiUrlPrefix: 'https://wwwdev.ebi.ac.uk/pdbe/api/v2/',
-    PdbApiUrlPrefix: 'http://localhost:5000/',
+    PdbApiUrlPrefix: 'https://www.ebi.ac.uk/pdbe/api/v2/',
     /** URL template for PDB structural data, '{pdb}' will be replaced by actual PDB ID. */
     PdbStructureUrlTemplate: 'https://www.ebi.ac.uk/pdbe/entry-files/{pdb}.bcif',
     /** Format for PDB structural data. */
     PdbStructureFormat: 'bcif',
 } satisfies MVSSnapshotProviderConfig;
-
-// /** Return a new MVSSnapshotProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api/v2) */
-// export function getDefaultMVSSnapshotProvider(config?: Partial<MVSSnapshotProviderConfig>): MVSSnapshotProvider {
-//     const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
-//     const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
-//     return new MVSSnapshotProvider(dataProvider, fullConfig);
-// }
 
 
 /*
@@ -992,13 +675,14 @@ Questions:
 
 
 Weird cases:
-- ligand is not in preferred assembly:
+- Ligand is not in preferred assembly:
   - 5ele: entity 6 (PENTAETHYLENE GLYCOL), entity 7 (2-acetamido-2-deoxy-beta-D-glucopyranose)
   - 7nys: entity 5 (CL) not in pref. assembly 2
 - Assembly with multiple operator groups applied to different chains: 3d12 assembly 1
 - Entity polymer type "other": 1ti9, 3ok2, 3ok4, 2mrx, 5dgf TODO decide how to show them in frontend
 - Entity polymer type "peptide nucleic acid": 2kvj
 - Entity polymer type "cyclic-pseudo-peptide": no real examples but we should future-proof
+- Symmetry operators with multiple operations in preferred assembly: 1m4x (ASM-1-61...)
 
 -------------------------------------------------------
 

@@ -6,7 +6,7 @@ import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/sac
 import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS } from './colors';
-import { DomainRecord, EntityRecord, ModifiedResidueRecord } from './data-provider';
+import { AssemblyRecord, DomainRecord, EntityRecord, ModifiedResidueRecord } from './data-provider';
 import { ChainInfo, ChainInstancesInfo } from './structure-info';
 
 
@@ -317,6 +317,12 @@ export function entityIsMacromolecule(entity: EntityRecord): boolean {
 }
 export function entityIsLigand(entity: EntityRecord): boolean {
     return entity.type === 'bound' && entity.compIds.length === 1;
+}
+
+export function getPreferredAssembly(assemblies: AssemblyRecord[]): AssemblyRecord {
+    const preferred = assemblies.find(ass => ass.preferred);
+    if (preferred === undefined) throw new Error('Could not find preferred assembly.');
+    return preferred;
 }
 
 
