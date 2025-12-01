@@ -1,7 +1,7 @@
 import { IDataProvider } from './data-provider';
 import { entityIsLigand, entityIsMacromolecule, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
-import { PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, ValidationTypes } from './mvs-snapshot-types';
+import { MODEL, PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, ValidationTypes } from './mvs-snapshot-types';
 import { getChainInstancesInAssemblies } from './structure-info';
 
 
@@ -211,6 +211,12 @@ export class MVSSnapshotListProvider {
                     }
                 }
                 // TODO ?ensure non-preferred assembly modres are listed in frontend? (1l7c)
+                break;
+            }
+            case 'pdbconnect_quality': {
+                for (const validationType of ValidationTypes) {
+                    out.push({ kind: 'pdbconnect_quality', name: `Validation (${validationType})`, params: { entry: entryId, assemblyId: MODEL, validation_type: validationType } });
+                }
                 break;
             }
             default:

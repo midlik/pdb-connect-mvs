@@ -90,6 +90,9 @@ export class MVSSnapshotProvider {
             case 'pdbconnect_summary_modification':
                 await this.loadPdbconnectSummaryModification(ctx, description, spec.params);
                 break;
+            case 'pdbconnect_quality':
+                await this.loadPdbconnectQuality(ctx, description, spec.params);
+                break;
         }
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
@@ -660,6 +663,60 @@ export class MVSSnapshotProvider {
         outDescription.push(`This is modified residue **${params.compId}** ${params.labelSeqId} (label_seq_id) in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
             outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+        }
+    }
+
+    private async loadPdbconnectQuality(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_quality']) {
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId });
+        const { displayedAssembly } = base.metadata;
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+
+        const validationReport = await this.dataProvider.pdbeStructureQualityReport(params.entry);
+        if (validationReport !== undefined) {
+            const annotationCif = [
+                'data_validation',
+                'loop_',
+                '_validation.label_asym_id',
+                '_validation.label_seq_id',
+                '_validation.class',
+                '_validation.tooltip',
+                '. . 0 OK',
+            ];
+            for (const molecule of validationReport.molecules) {
+                for (const chain of molecule.chains) {
+                    for (const residue of chain.models[0].residues) {
+                        const class_ = params.validation_type === 'issue_count' ? Math.min(residue.outlier_types.length, 3) : residue.outlier_types.includes(params.validation_type) ? 'y' : undefined;
+                        if (class_) {
+                            annotationCif.push(`${chain.struct_asym_id} ${residue.residue_number} ${class_} '${residue.outlier_types.join(', ')}'`);
+                        }
+                    }
+                }
+            }
+            const annotationUri = 'data:text/plain, ' + annotationCif.join(' ');
+            for (const repr of Object.values(base.representations)) {
+                repr.color({ color: VALIDATION_COLORS[0] }); // base color for residues without issues (not listed in the report)
+            }
+            base.representations.polymerCartoon?.colorFromUri({
+                uri: annotationUri, format: 'cif', schema: 'all_atomic', category_name: 'validation', field_name: 'class',
+                palette: { kind: 'categorical', colors: { '0': VALIDATION_COLORS[0], '1': VALIDATION_COLORS[1], '2': VALIDATION_COLORS[2], '3': VALIDATION_COLORS[3], 'y': VALIDATION_COLORS.HAS_ISSUE } },
+            });
+            base.structure.component().tooltip({ text: '<hr>Validation:' });
+            base.structure.tooltipFromUri({ uri: annotationUri, format: 'cif', schema: 'all_atomic', category_name: 'validation', field_name: 'tooltip' });
+            outDescription.push(`## Validation`);
+            if (params.validation_type === 'issue_count') {
+                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry validation issue types. White - no issues, yellow - one issue type, orange - two issue types, red - three or more issue types.`);
+            } else {
+                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by presence of "${params.validation_type}" validation issues. White - no issue, red - has issues.`);
+            }
+            outDescription.push(`Displaying ${assemblyText}.`);
+        } else {
+            for (const repr of Object.values(base.representations)) {
+                repr.color({ color: VALIDATION_COLORS.NOT_APPLICABLE });
+            }
+            base.structure.component().tooltip({ text: '<hr>Validation: Not available' });
+            outDescription.push(`## Validation`);
+            outDescription.push(`PDBe Structure Quality Report not available for this entry.`);
+            outDescription.push(`Displaying ${assemblyText}.`);
         }
     }
 }

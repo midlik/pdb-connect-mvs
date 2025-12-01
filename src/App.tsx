@@ -115,7 +115,7 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
 
     const kinds = model.snapshotListProvider.listSnapshotKinds();
     // const [category, setCategory] = useState<string>(kinds[0]);
-    const [category, setCategory] = useState<string>('pdbconnect_summary_modification');
+    const [category, setCategory] = useState<string>('pdbconnect_quality');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>

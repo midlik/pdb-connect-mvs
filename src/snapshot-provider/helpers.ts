@@ -5,7 +5,7 @@ import { LipidNames } from 'molstar/lib/mol-model/structure/model/types/lipids';
 import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/saccharides';
 import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol';
 import { Color } from 'molstar/lib/mol-util/color';
-import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS } from './colors';
+import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS, WATER_COLOR } from './colors';
 import { AssemblyRecord, DomainRecord, EntityRecord, ModifiedResidueRecord } from './data-provider';
 import { ChainInfo, ChainInstancesInfo } from './structure-info';
 
@@ -198,13 +198,12 @@ export function applyOpacity(repr: Builder.Representation, opacity: number | und
 export function getEntityColors(entities: { [entityId: string]: EntityRecord }): { [entityId: string]: ColorT } {
     const polymerColorIterator = cycleIterator(ENTITY_COLORS);
     const ligandColorIterator = cycleIterator(LIGAND_COLORS);
-    const waterColor = Color.toHexStyle(ElementSymbolColors.O) as ColorT;
 
     const out: { [entityId: string]: ColorT } = {};
 
     for (const entityId of Object.keys(entities)) {
         const entity = entities[entityId];
-        const color = entity.type === 'water' ? waterColor : entityIsLigand(entity) ? ligandColorIterator.next().value! : polymerColorIterator.next().value!;
+        const color = entity.type === 'water' ? WATER_COLOR : entityIsLigand(entity) ? ligandColorIterator.next().value! : polymerColorIterator.next().value!;
         out[entityId] = color;
         // TODO assign fixed colors to single-element ligands? (like in PDBImages)
     }

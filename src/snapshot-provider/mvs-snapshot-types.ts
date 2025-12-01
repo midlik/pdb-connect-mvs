@@ -93,7 +93,15 @@ export type SnapshotSpecParams = {
         labelSeqId: number,
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId?: string,
-    }
+    },
+    pdbconnect_quality: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+        /** Validation view type (either 'issue_count' for number of outlier types on a residue, or name of a specific outlier type) */
+        validation_type: ValidationType,
+    },
 }
 
 export type SnapshotKind = keyof SnapshotSpecParams;
@@ -108,6 +116,7 @@ export const SnapshotKinds = [
     'pdbconnect_summary_domain',
     'pdbconnect_summary_all_modifications',
     'pdbconnect_summary_modification',
+    'pdbconnect_quality',
 ] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
@@ -115,7 +124,8 @@ export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =
     ? { kind: TKind, params: SnapshotSpecParams[TKind], name: string }
     : never; // extends clause needed to create discriminated union type properly
 
-export const ValidationTypes = ['issue_count', 'bond_angles', 'clashes', 'sidechain_outliers', 'symm_clashes', 'planes'] as const;
+/** Validation view type ('issue_count' for number of outlier types, or specific outlier type (this list might not be complete)) */
+export const ValidationTypes = ['issue_count', 'bond_angles', 'clashes', 'sidechain_outliers', 'symm_clashes', 'planes', 'RSRZ'] as const;
 export type ValidationType = (typeof ValidationTypes)[number];
 
 /** Special value for `assemblyId` meaning that the preferred assembly should be used. */

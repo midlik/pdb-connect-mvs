@@ -36,6 +36,9 @@ export const ANNOTATION_COLORS = [...SET1, ...VIVID].map(Color.toHexStyle) as Co
 /** A set of non-gray colors starting with brighter colors, for modified residues (same as for domains but drawn from the end) */
 export const MODRES_COLORS = ANNOTATION_COLORS.slice().reverse();
 
+/** Color for water entity */
+export const WATER_COLOR = '#ff0d0d';
+
 export const DEFAULT_COLORS = ENTITY_COLORS;
 
 
