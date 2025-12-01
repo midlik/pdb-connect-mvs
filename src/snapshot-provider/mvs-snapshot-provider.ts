@@ -488,32 +488,37 @@ export class MVSSnapshotProvider {
         // }
 
         const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it?
-        const entityChains = entities[params.entityId].chains;
         const entityColors = getEntityColors(entities);
-        const entityType = decideEntityType(entities[params.entityId]);
-        const highlightedChain = params.labelAsymId ?? entityChains[0];
-        const highlightedInstance = params.instanceId;
 
-        // TODO prohibit cartoon quality 'lowest' (consider hiding by size_factor in 3j3q); or use coloring instead of adding reprs for entities
-        const entityComponents = applyStandardComponentsForChain(base.structure, highlightedChain, highlightedInstance, entityType, { modifiedResidues });
-        for (const comp of Object.values(entityComponents)) {
-            comp.focus();
+        for (const repr of Object.values(base.representations)) {
+            applyEntityColors(repr, { [params.entityId]: entityColors[params.entityId] });
         }
-        const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1, sizeFactor: 1.05, custom: CustomDataForEmissivePulse, refPrefix: 'highlighted' });
-        for (const repr of Object.values(entityRepresentations)) {
-            repr.color({ color: entityColors[params.entityId] });
-        }
-        for (const repr of atomicRepresentations(entityRepresentations)) {
-            applyElementColors(repr);
-        }
-        base.root.animation({})
-            .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
-            .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
+        // TODO Molstar: coloring by element within selection (entity)
+        // for (const repr of atomicRepresentations(base.representations)) {
+        //     applyElementColors(repr);
+        // }
+        base.structure.component({ selector: { label_entity_id: params.entityId } }).focus();
+
+        // const entityType = decideEntityType(entities[params.entityId]);
+        // const entityComponents = applyStandardComponentsForChain(base.structure, params.labelAsymId, params.instanceId, entityType, { modifiedResidues });
+        // for (const comp of Object.values(entityComponents)) {
+        //     comp.focus();
+        // }
+        // const entityRepresentations = applyStandardRepresentations(entityComponents, { opacityFactor: 1, sizeFactor: 1.05, custom: CustomDataForEmissivePulse, refPrefix: 'highlighted' });
+        // for (const repr of Object.values(entityRepresentations)) {
+        //     repr.color({ color: entityColors[params.entityId] });
+        // }
+        // for (const repr of atomicRepresentations(entityRepresentations)) {
+        //     applyElementColors(repr);
+        // }
+        // base.root.animation({})
+        //     .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
+        //     .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
         // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
 
         outDescription.push(`## Macromolecule ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${highlightedChain} (label_asym_id) in ${assemblyText}.`);
+        outDescription.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
             outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
@@ -786,7 +791,7 @@ All existing PDBImages states:
 
 Current PDBconnect states (Nov2025):
 - Summary - Preferred complex
-- Summary - Highlight entity (per polymer entity, only highlights 1 instance)
+- Summary - Macromolecule (per polymer entity, only highlights 1 instance)
 - Summary - All ligands
 - Summary - Highlight ligand (per ligand entity, only highlight 1 instance)
 - Summary - Domains default (all white)
@@ -798,9 +803,10 @@ Current PDBconnect states (Nov2025):
   - 3llc, MSE 1 in chain A - zooming currently fails (non-modelled residue)
 - Model Quality - Issue count
 - Model Quality - Specific issue (per issue type)
-- Complexes - assembly (per assembly)
-- Macromolecules - Highlight entity (per entity per chain, same as on Summary tab?)
+- Complexes - assembly (per assembly) -> same as Summary-Default
+- Macromolecules - Highlight entity (per entity per chain, same as on Summary-Macromolecule?)
   - Ability to focus residues and show their interactions
+    - Is this implemented via PDBeMolstar focus or something custom
 - Ligand and Environments - Ligand interactions (per ligand instance)
   - Ability to focus and highlight individual interactions
   - Genevieve's suggestions: use Fog (gives better depth perception)
