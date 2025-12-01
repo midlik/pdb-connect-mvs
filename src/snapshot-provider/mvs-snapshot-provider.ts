@@ -4,7 +4,7 @@ import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, StandardRepresentationType, uniqueModresCompIds } from './helpers';
 import { IModelProvider } from './model-provider';
 import { MODEL, PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
@@ -12,6 +12,10 @@ import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structu
 
 /** Level of opacity used for domain and ligand images */
 const FADED_OPACITY = 0.5;
+/** Radius factor for focusing ligands and modified residues (radius = (bounding sphere radius) * factor + extent) */
+const FOCUS_RADIUS_FACTOR = 1;
+/** Radius extent for focusing ligands and modified residues (radius = (bounding sphere radius) * factor + extent) */
+const FOCUS_RADIUS_EXTENT = 2.5;
 
 interface BuilderContext {
     root: Builder.Root,
@@ -79,6 +83,12 @@ export class MVSSnapshotProvider {
                 break;
             case 'pdbconnect_summary_domain':
                 await this.loadPdbconnectSummaryDomain(ctx, description, spec.params);
+                break;
+            case 'pdbconnect_summary_all_modifications':
+                await this.loadPdbconnectSummaryAllModifications(ctx, description, spec.params);
+                break;
+            case 'pdbconnect_summary_modification':
+                await this.loadPdbconnectSummaryModification(ctx, description, spec.params);
                 break;
         }
         description.push('---');
@@ -434,6 +444,7 @@ export class MVSSnapshotProvider {
             metadata: { displayedAssembly, modifiedResidues },
         };
     }
+
     private async loadPdbconnectSummaryDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default'] & { ensureEntity?: string, ensureChain?: string }) {
         const base = await this._loadPdbconnectBase(ctx, params);
         const entities = await this.dataProvider.entities(params.entry);
@@ -531,7 +542,9 @@ export class MVSSnapshotProvider {
         const base = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly, entities } = base.metadata;
 
-        base.structure.component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } }).focus();
+        base.structure
+            .component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } })
+            .focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
 
         outDescription.push(`## Ligand entity ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
@@ -599,6 +612,55 @@ export class MVSSnapshotProvider {
         outDescription.push(`## Domain ${params.domainId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
         outDescription.push(`Showing ${params.source} ${params.familyId} domain ${params.domainId} in ${assemblyText}.`);
+    }
+
+    private async loadPdbconnectSummaryAllModifications(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_modifications']) {
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId });
+        const { displayedAssembly } = base.metadata;
+
+        if (base.components.nonstandard) {
+            const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+            const modresColors = getModresColors(modifiedResidues);
+            const modresSpacefill = base.components.nonstandard.representation({ type: 'spacefill' });
+            for (const compId in modresColors) {
+                modresSpacefill.color({ selector: { label_comp_id: compId }, color: modresColors[compId] });
+            }
+        }
+
+        outDescription.push(`## All modified residues`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`Overview of all modified residues in ${assemblyText}.`);
+    }
+
+    private async loadPdbconnectSummaryModification(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_modification']) {
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+        const { displayedAssembly } = base.metadata;
+        const entities = await this.dataProvider.entities(params.entry);
+        const entityColors = getEntityColors(entities);
+        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
+        const modresColors = getModresColors(modifiedResidues);
+        for (const [reprName, repr] of Object.entries(base.representations)) {
+            if (reprName as StandardRepresentationType === 'nonstandardSticks') {
+                for (const compId in modresColors) {
+                    repr.color({ selector: { label_comp_id: compId }, color: modresColors[compId] });
+                }
+            } else {
+                applyEntityColors(repr, entityColors);
+            }
+        }
+        for (const repr of atomicRepresentations(base.representations)) {
+            applyElementColors(repr);
+        }
+        base.structure
+            .component({ selector: { label_asym_id: params.labelAsymId, label_seq_id: params.labelSeqId, instance_id: params.instanceId } })
+            .focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
+
+        outDescription.push(`## Modified residue ${params.compId}`);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        outDescription.push(`This is modified residue **${params.compId}** ${params.labelSeqId} (label_seq_id) in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
+        if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
+            outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+        }
     }
 }
 
@@ -724,6 +786,10 @@ Weird cases:
 - Entity polymer type "cyclic-pseudo-peptide": no real examples but we should future-proof
 - Symmetry operators with multiple operations in preferred assembly: 1m4x (ASM-1-61...)
 - Multiple domain instances in one chain: 2ww8, 1n26
+- 1hcj - more types of modified residues GYS, ABA
+- 1l7c - modified residues not in preferred assembly
+- 2n4n - designed peptide (25res) with 4G6, 4FU, current API misses modified residues, current image generation shows no linkage on modified residues
+- 1d9d - modified residues on DNA (U31, C31)
 
 -------------------------------------------------------
 

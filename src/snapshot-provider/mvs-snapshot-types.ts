@@ -21,9 +21,9 @@ export type SnapshotSpecParams = {
         assemblyId: string,
         /** Entity ID of the macromolecule (polymer or branched) entity */
         entityId: string,
-        /** `undefined` for showing first instance of the entity */
+        /** TODO docstring or make required */
         labelAsymId?: string,
-        /** `undefined` for showing first instance of the entity */
+        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId?: string,
     },
     pdbconnect_summary_all_ligands: {
@@ -39,9 +39,9 @@ export type SnapshotSpecParams = {
         assemblyId: string,
         /** Entity ID of the ligand entity */
         entityId: string,
-        /** `undefined` for showing first instance of the entity */
+        /** TODO docstring or make required */
         labelAsymId?: string,
-        /** `undefined` for showing first instance of the entity */
+        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId?: string,
     },
     pdbconnect_summary_domains_default: {
@@ -74,6 +74,26 @@ export type SnapshotSpecParams = {
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId?: string,
     },
+    pdbconnect_summary_all_modifications: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+    }
+    pdbconnect_summary_modification: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+        /** Modified residue CCD code (e.g. 'MSE') */
+        compId: string,
+        /** Chain identifier (label_asym_id) */
+        labelAsymId: string,
+        /** Residue identifier (label_seq_id) */
+        labelSeqId: number,
+        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
+        instanceId?: string,
+    }
 }
 
 export type SnapshotKind = keyof SnapshotSpecParams;
@@ -86,6 +106,8 @@ export const SnapshotKinds = [
     'pdbconnect_summary_domains_default',
     'pdbconnect_summary_domains_in_source',
     'pdbconnect_summary_domain',
+    'pdbconnect_summary_all_modifications',
+    'pdbconnect_summary_modification',
 ] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =

@@ -46,11 +46,6 @@ export class MVSSnapshotListProvider {
                         const famDomains = srcDomains[familyId];
                         for (const entityId in famDomains) {
                             out.push({ kind: 'domain', name: `Domain ${source} ${familyId} in entity ${entityId}`, params: { entry: entryId, source, familyId, entityId } });
-                            // const entDomains = famDomains[entityId];
-                            // for (const domain of entDomains) {
-                            //     out.push({ kind: 'domain', name: `Domain ${domain.id}: ${source} ${familyId} in entity ${entityId}`, params: { entry: entryId, source, entityId, familyId } });
-                            //     // TODO allow all-domain-in-chain view (with specific chain or auto) and specific-domain view?
-                            // }
                         }
                     }
                 }
@@ -191,6 +186,31 @@ export class MVSSnapshotListProvider {
                         }
                     }
                 }
+                break;
+            }
+            case 'pdbconnect_summary_all_modifications': {
+                out.push({ kind: 'pdbconnect_summary_all_modifications', name: `All modified residues`, params: { entry: entryId, assemblyId: PREFERRED } });
+                break;
+            }
+            case 'pdbconnect_summary_modification': {
+                const modifiedResidues = await this.dataProvider.modifiedResidues(entryId);
+                const assemblies = await this.dataProvider.assemblies(entryId);
+                const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
+                modifiedResidues.sort((a, b) => a.compoundId < b.compoundId ? -1 : a.compoundId === b.compoundId ? 0 : 1); // sort by compoundId
+                const modelData = await this.modelProvider.getModel(entryId);
+                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+                for (const modres of modifiedResidues) {
+                    let instances: (string | undefined)[] = chainInstancesInfo[preferredAssembly].operatorsPerChain[modres.labelAsymId];
+                    if (instances === undefined || instances.length === 0) instances = [undefined];
+                    for (const instanceId of instances) {
+                        out.push({
+                            kind: 'pdbconnect_summary_modification',
+                            name: `Modified residue ${modres.compoundId} (label_asym_id ${modres.labelAsymId} ${modres.labelSeqId},  ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
+                            params: { entry: entryId, assemblyId: PREFERRED, compId: modres.compoundId, labelAsymId: modres.labelAsymId, labelSeqId: modres.labelSeqId, instanceId },
+                        });
+                    }
+                }
+                // TODO ?ensure non-preferred assembly modres are listed in frontend? (1l7c)
                 break;
             }
             default:
