@@ -6,7 +6,7 @@ import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/sac
 import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol';
 import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS, WATER_COLOR } from './colors';
-import { AssemblyRecord, DomainRecord, EntityRecord, ModifiedResidueRecord } from './data-provider';
+import { AssemblyRecord, DomainRecord, EntityRecord, ResidueRecord } from './data-provider';
 import { ChainInfo, ChainInstancesInfo } from './structure-info';
 
 
@@ -19,7 +19,7 @@ export type LigEnvComponentType = 'ligand' | 'environment' | 'wideEnvironment' |
 export type LigEnvRepresentationType = 'ligandSticks' | 'environmentSticks' | 'linkageSticks' | 'wideEnvironmentCartoon';
 
 export interface StandardComponentsOptions {
-    modifiedResidues: ModifiedResidueRecord[],
+    modifiedResidues: ResidueRecord[],
 }
 
 export type StandardComponentCollection = { [type in StandardComponentType]?: Builder.Component };
@@ -237,7 +237,7 @@ export function getDomainFamilyColors(domains: { [source: string]: { [family: st
     return out;
 }
 
-export function getModresColors(modifiedResidues: ModifiedResidueRecord[]) {
+export function getModresColors(modifiedResidues: ResidueRecord[]) {
     const colorIterator = cycleIterator(MODRES_COLORS);
     const out: { [compId: string]: HexColorT } = {};
     for (const modres of uniqueModresCompIds(modifiedResidues)) {
@@ -246,7 +246,7 @@ export function getModresColors(modifiedResidues: ModifiedResidueRecord[]) {
     return out;
 }
 
-export function uniqueModresCompIds(modifiedResidues: ModifiedResidueRecord[]) {
+export function uniqueModresCompIds(modifiedResidues: ResidueRecord[]) {
     return Array.from(new Set(modifiedResidues.map(r => r.compoundId))).sort();
 }
 
@@ -334,6 +334,29 @@ export function getPreferredAssembly(assemblies: AssemblyRecord[]): AssemblyReco
     const preferred = assemblies.find(ass => ass.preferred);
     if (preferred === undefined) throw new Error('Could not find preferred assembly.');
     return preferred;
+}
+
+/** Deal with special cases where ' ' or '' means undefined */
+export function normalizeInsertionCode(insCode: string | undefined): string | undefined {
+    if (insCode?.trim()) return insCode;
+    else return undefined;
+}
+
+/** Return list of unique/distinct values from `values` in the order of their first occurrence.
+ * If `key` is provided, use it to judge equality. */
+export function unique<T>(values: T[]): T[];
+export function unique<T, K>(values: T[], key: (v: T) => K): T[];
+export function unique<T, K>(values: T[], key: (v: T) => K = ((x: T) => x) as any) {
+    const out: T[] = [];
+    const seen = new Set<K>();
+    for (const value of values) {
+        const k = key(value);
+        if (!seen.has(k)) {
+            seen.add(k);
+            out.push(value);
+        }
+    }
+    return out;
 }
 
 

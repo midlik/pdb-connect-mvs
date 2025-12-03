@@ -2,11 +2,11 @@ import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
-import { ANNOTATION_COLORS, MODRES_COLORS, VALIDATION_COLORS } from './colors';
+import { ANNOTATION_COLORS, InteractionTypeColors, MODRES_COLORS, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChain, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, entityIsMacromolecule, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, MacromoleculeTypes, smartFadedOpacity, StandardRepresentationType, uniqueModresCompIds } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, normalizeInsertionCode, smartFadedOpacity, StandardRepresentationType, unique } from './helpers';
 import { IModelProvider } from './model-provider';
-import { MODEL, PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
+import { MODEL, PREFERRED, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
 
 
@@ -16,6 +16,36 @@ const FADED_OPACITY = 0.5;
 const FOCUS_RADIUS_FACTOR = 1;
 /** Radius extent for focusing ligands and modified residues (radius = (bounding sphere radius) * factor + extent) */
 const FOCUS_RADIUS_EXTENT = 2.5;
+/** Tube radius for atom interactions */
+const INTERACTION_TUBE_RADIUS = 0.075;
+/** Tube dash length for atom interactions */
+const INTERACTION_TUBE_DASH_LENGTH = 0.1;
+/** Nice names for atom interaction types */
+export const INTERACTION_NICE_NAMES: Record<string, string> = {
+    clash: 'Covalent clash',
+    covalent: 'Covalent',
+    vdw_clash: 'Van der Waals clash',
+    vdw: 'Van der Waals',
+    hbond: 'Hydrogen bond',
+    xbond: 'Halogen bond',
+    ionic: 'Ionic',
+    metal_complex: 'Metal complex',
+    aromatic: 'Aromatic',
+    FF: 'Plane-Plane',
+    hydrophobic: 'Hydrophobic',
+    carbonyl: 'Carbonyl',
+    polar: 'Polar',
+    CARBONPI: 'Carbon-pi',
+    CATIONPI: 'Cation-pi',
+    DONORPI: 'Hydrogen bond donor-pi',
+    HALOGENPI: 'Halogen-pi',
+    METSULPHURPI: 'Methionine sulphur-pi',
+    plane_plane: 'Plane-Plane',
+    AMIDEAMIDE: 'Amide-Amide',
+    AMIDERING: 'Amide-Ring',
+    weak_polar: 'Weak polar',
+    weak_hbond: 'Weak hydrogen bond',
+};
 
 interface BuilderContext {
     root: Builder.Root,
@@ -93,10 +123,13 @@ export class MVSSnapshotProvider {
             case 'pdbconnect_quality':
                 await this.loadPdbconnectQuality(ctx, description, spec.params);
                 break;
+            case 'pdbconnect_environment':
+                await this.loadPdbconnectEnvironment(ctx, description, spec.params);
+                break;
         }
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
-        description.push(`- **View params:** ${JSON.stringify(spec.params)}`);
+        description.push(`- **View params:** ${JSON.stringify(spec.params, undefined, 1)}`);
         // TODO Molstar: ensure that camera transition is played when loading a multistate MVS! (or give up animations if not possible)
         if (asMultistate) {
             const snapshot = builder.getSnapshot({ title: spec.name, description: description.join('\n\n'), linger_duration_ms: 10_000 });
@@ -478,9 +511,8 @@ export class MVSSnapshotProvider {
 
     private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureEntity: params.entityId });
-        const { displayedAssembly, modifiedResidues } = base.metadata;
+        const { displayedAssembly } = base.metadata;
 
-        // TODO consider background structure display: white without opacity vs gray with opacity (consider hiding by size_factor in 3j3q)
         // const modelData = await this.modelProvider.getModel(params.entry);
         // const bgOpacity = smartFadedOpacity(structurePolymerResidueCount(modelData, base.metadata.displayedAssembly));
         // for (const repr of Object.values(base.representations)) {
@@ -724,6 +756,78 @@ export class MVSSnapshotProvider {
             outDescription.push(`Displaying ${assemblyText}.`);
         }
     }
+
+    private async loadPdbconnectEnvironment(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_environment']) {
+        const base = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+        const { displayedAssembly, entityColors } = base.metadata;
+
+        base.structure
+            .component({
+                selector: { auth_asym_id: params.authAsymId, auth_seq_id: params.authSeqId, pdbx_PDB_ins_code: params.authInsCode, instance_id: params.instanceId },
+                custom: { molstar_show_non_covalent_interactions: params.atomInteractions === 'builtin' },
+            })
+            .focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
+
+        if (params.atomInteractions === 'api') {
+            const atomInteractions = await this.dataProvider.atomInteractions(params.entry, params.authAsymId, params.authSeqId);
+            const partnerResidues: { auth_asym_id: string, auth_seq_id: number, pdbx_PDB_ins_code?: string, instance_id?: string }[] = [];
+            const primitives = base.structure.primitives();
+            for (const { interactions, ligand } of atomInteractions) {
+                for (const int of interactions) {
+                    const details = int.interaction_details;
+                    const color = details.length === 1 ? (InteractionTypeColors[details[0]] ?? InteractionTypeColors._DEFAULT_) : InteractionTypeColors._MIXED_;
+                    // TODO pass colors from frontend (also for entities, domains etc)
+                    const formatInteractionType = (type: string) => INTERACTION_NICE_NAMES[type] ?? type;
+                    const tooltipHeader = details.length === 1 ?
+                        `<strong>${formatInteractionType(details[0])} interaction</strong>`
+                        : `<strong>Mixed interaction</strong><br>${details.map(formatInteractionType).join(', ')}`;
+                    const tooltipLigand = `<strong>${ligand.chem_comp_id} ${ligand.author_residue_number}${ligand.author_insertion_code?.trim() ?? ''}</strong> | ${int.ligand_atoms.join(', ')}`;
+                    const tooltipPartner = `<strong>${int.end.chem_comp_id} ${int.end.author_residue_number}${int.end.author_insertion_code?.trim() ?? ''}</strong> | ${int.end.atom_names.join(', ')}`;
+                    const tooltip = `${tooltipHeader}<br>${tooltipLigand} — ${tooltipPartner}`;
+                    const ligandSelector: ComponentExpressionT[] = int.ligand_atoms.map(atom => ({
+                        auth_asym_id: ligand.chain_id,
+                        auth_seq_id: ligand.author_residue_number,
+                        pdbx_PDB_ins_code: normalizeInsertionCode(ligand.author_insertion_code),
+                        auth_atom_id: atom,
+                        instance_id: params.instanceId,
+                    }));
+                    const partnerSelector: ComponentExpressionT[] = int.end.atom_names.map(atom => ({
+                        auth_asym_id: int.end.chain_id,
+                        auth_seq_id: int.end.author_residue_number,
+                        pdbx_PDB_ins_code: normalizeInsertionCode(int.end.author_insertion_code),
+                        auth_atom_id: atom,
+                        instance_id: params.instanceId,
+                    }));
+                    primitives.tube({
+                        start: { expressions: ligandSelector },
+                        end: { expressions: partnerSelector },
+                        radius: INTERACTION_TUBE_RADIUS,
+                        dash_length: INTERACTION_TUBE_DASH_LENGTH,
+                        color: color,
+                        tooltip: tooltip,
+                    });
+                    partnerResidues.push({
+                        auth_asym_id: int.end.chain_id,
+                        auth_seq_id: int.end.author_residue_number,
+                        pdbx_PDB_ins_code: normalizeInsertionCode(int.end.author_insertion_code),
+                        instance_id: params.instanceId,
+                    });
+                }
+            }
+            const partnerResiduesRepr = base.structure
+                .component({ selector: unique(partnerResidues, r => `${r.auth_asym_id}:${r.auth_seq_id}:${r.pdbx_PDB_ins_code ?? ''}:${r.instance_id ?? ''}`) })
+                .representation({ type: 'ball_and_stick', size_factor: 0.5 });
+            applyEntityColors(partnerResiduesRepr, entityColors);
+            applyElementColors(partnerResiduesRepr);
+        }
+
+        outDescription.push(`## Residue environment for auth ${params.authAsymId} ${params.authSeqId}${params.authInsCode} `);
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex(assembly) ${displayedAssembly} `;
+        outDescription.push(`This is residue auth ${params.authSeqId}${params.authInsCode} in chain auth ${params.authAsymId} in ${assemblyText}.`);
+        if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
+            outDescription.push(`*\u26A0 Residue is not present in the requested assembly(${params.assemblyId}), displaying the deposited model instead.* `);
+        }
+    }
 }
 
 
@@ -808,6 +912,8 @@ Current PDBconnect states (Nov2025):
   - Ability to focus residues and show their interactions
     - Is this implemented via PDBeMolstar focus or something custom
 - Ligand and Environments - Ligand interactions (per ligand instance)
+  - Includes modified residues (TODO what about mon_nstd_flag=.? e.g. LOV in 1gkt)
+  - Shows API interactions for ligands, Molstar interactions for modres
   - Ability to focus and highlight individual interactions
   - Genevieve's suggestions: use Fog (gives better depth perception)
 - Domains - Domain (per domain instance)

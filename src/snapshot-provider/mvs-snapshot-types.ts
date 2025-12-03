@@ -102,6 +102,24 @@ export type SnapshotSpecParams = {
         /** Validation view type (either 'issue_count' for number of outlier types on a residue, or name of a specific outlier type) */
         validation_type: ValidationType,
     },
+    pdbconnect_environment: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+        /** Chain identifier (label_asym_id) */
+        labelAsymId: string,
+        /** Author chain identifier (auth_asym_id) */
+        authAsymId: string,
+        /** Author residue number (auth_seq_id) */
+        authSeqId: number,
+        /** Residue insertion code (pdbx_PDB_ins_code) */
+        authInsCode: string,
+        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
+        instanceId: string | undefined,
+        /** Source of atom interactions to be shown */
+        atomInteractions: 'api' | 'builtin' | 'none',
+    },
 }
 
 export type SnapshotKind = keyof SnapshotSpecParams;
@@ -117,6 +135,7 @@ export const SnapshotKinds = [
     'pdbconnect_summary_all_modifications',
     'pdbconnect_summary_modification',
     'pdbconnect_quality',
+    'pdbconnect_environment',
 ] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =

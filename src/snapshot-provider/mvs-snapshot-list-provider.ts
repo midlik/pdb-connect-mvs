@@ -219,6 +219,41 @@ export class MVSSnapshotListProvider {
                 }
                 break;
             }
+            case 'pdbconnect_environment': {
+                const entities = await this.dataProvider.entities(entryId);
+                const assemblies = await this.dataProvider.assemblies(entryId);
+                const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
+                const modelData = await this.modelProvider.getModel(entryId);
+                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+                const ligands = await this.dataProvider.ligands(entryId);
+                const modifiedResidues = await this.dataProvider.modifiedResidues(entryId);
+                modifiedResidues.sort((a, b) => a.compoundId < b.compoundId ? -1 : a.compoundId === b.compoundId ? 0 : 1); // sort by compoundId
+                for (const ligand of ligands) {
+                    if (!entityIsLigand(entities[ligand.entityId])) continue;
+                    const compId = ligand.compoundId;
+                    let instances: (string | undefined)[] = chainInstancesInfo[preferredAssembly].operatorsPerChain[ligand.labelAsymId];
+                    if (instances === undefined || instances.length === 0) instances = [undefined];
+                    for (const instanceId of instances) {
+                        out.push({
+                            kind: 'pdbconnect_environment',
+                            name: `Ligand environment for ${compId} ${ligand.labelAsymId} [auth ${ligand.authAsymId} ${ligand.authSeqId}${ligand.authInsCode}] (${instanceId ? `instance_id ${instanceId}` : 'model'})`,
+                            params: { entry: entryId, assemblyId: PREFERRED, labelAsymId: ligand.labelAsymId, authAsymId: ligand.authAsymId, authSeqId: ligand.authSeqId, authInsCode: ligand.authInsCode, instanceId, atomInteractions: 'api' },
+                        });
+                    }
+                }
+                for (const modres of modifiedResidues) {
+                    let instances: (string | undefined)[] = chainInstancesInfo[preferredAssembly].operatorsPerChain[modres.labelAsymId];
+                    if (instances === undefined || instances.length === 0) instances = [undefined];
+                    for (const instanceId of instances) {
+                        out.push({
+                            kind: 'pdbconnect_environment',
+                            name: `Modified residue environment for ${modres.compoundId} ${modres.labelAsymId} ${modres.labelSeqId} [auth ${modres.authAsymId} ${modres.authSeqId}${modres.authInsCode}] (${instanceId ? `instance_id ${instanceId}` : 'model'})`,
+                            params: { entry: entryId, assemblyId: PREFERRED, labelAsymId: modres.labelAsymId, authAsymId: modres.authAsymId, authSeqId: modres.authSeqId, authInsCode: modres.authInsCode, instanceId, atomInteractions: 'builtin' },
+                        });
+                    }
+                }
+                break;
+            }
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }

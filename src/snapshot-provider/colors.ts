@@ -39,10 +39,6 @@ export const MODRES_COLORS = ANNOTATION_COLORS.slice().reverse();
 /** Color for water entity */
 export const WATER_COLOR = '#ff0d0d';
 
-export const DEFAULT_COLORS = ENTITY_COLORS;
-
-
-
 export const VALIDATION_COLORS = {
     NOT_APPLICABLE: '#808080', // not applicable
     0: '#ffffff', // 0 issues (PDBconnect currently uses #d4d5d4)
@@ -51,6 +47,27 @@ export const VALIDATION_COLORS = {
     3: '#b2182b', // 3 or more issues
     HAS_ISSUE: '#b2182b',
 } as const;
+
+export const InteractionTypeColors: Record<string, ColorT> = {
+    'AMIDERING': 'red',
+    'CARBONPI': 'magenta',
+    'DONORPI': 'magenta',
+    'carbonyl': '#ffffff',
+    'covalent': '#ffffff',
+    'hbond': '#00ffff',
+    'hydrophobic': 'yellow',
+    'metal_complex': '#00ff00',
+    'polar': '#0000ff',
+    'vdw': '#ffffff',
+    'vdw_clash': 'red',
+    'weak_hbond': '#00aaaa',
+    'weak_polar': '#0000aa',
+
+    '_DEFAULT_': 'gray',
+    '_MIXED_': 'gray',
+    // TODO collect all possible values and decide on colors, this is non-exhaustive list with random colors
+} as const;
+
 
 /** Iterate over the elements of `values` in a cycle (forever). */
 export function* cycleIterator<T>(values: T[]) {

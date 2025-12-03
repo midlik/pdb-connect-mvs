@@ -2,6 +2,7 @@
 
 import { ModelSymmetry } from 'molstar/lib/mol-model-formats/structure/property/symmetry';
 import { Model, ResidueIndex } from 'molstar/lib/mol-model/structure';
+import { unique } from './helpers';
 
 
 export type ChainInfo = { [labelChainId: string]: { authChainId: string, entityId: string } };
@@ -81,14 +82,10 @@ export function getChainInstancesInAssemblies(model: Model): ChainInstancesInfo 
         const allOperators: string[] = [];
         const operatorsPerChain: { [labelChainId: string]: string[] } = {};
         const chainsPerOperator: { [instanceId: string]: string[] } = {};
-        const seenOperators = new Set<string>();
         for (const group of assembly.operatorGroups) {
             for (const op of group.operators) {
                 const instanceId = op.instanceId;
-                if (!seenOperators.has(instanceId)) {
-                    seenOperators.add(instanceId);
-                    allOperators.push(instanceId);
-                }
+                allOperators.push(instanceId);
                 if (group.asymIds) {
                     for (const labelAsymId of group.asymIds) {
                         (operatorsPerChain[labelAsymId] ??= []).push(instanceId);
@@ -97,7 +94,7 @@ export function getChainInstancesInAssemblies(model: Model): ChainInstancesInfo 
                 }
             }
         }
-        out[assembly.id] = { allOperators, operatorsPerChain, chainsPerOperator };
+        out[assembly.id] = { allOperators: unique(allOperators), operatorsPerChain, chainsPerOperator };
     }
     return out;
 }

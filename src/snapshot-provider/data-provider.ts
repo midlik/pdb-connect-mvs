@@ -1,14 +1,18 @@
+import { ColorT } from "molstar/lib/extensions/mvs/tree/mvs/param-types";
+import { normalizeInsertionCode } from "./helpers";
 
 export interface IDataProvider {
     assemblies(entryId: string): Promise<AssemblyRecord[]>,
     entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }>,
-    modifiedResidues(pdbId: string): Promise<ModifiedResidueRecord[]>,
+    ligands(pdbId: string): Promise<ResidueRecord[]>,
+    modifiedResidues(pdbId: string): Promise<ResidueRecord[]>,
     entitiesInAssemblies(pdbId: string): Promise<{ [entityId: string]: { assemblies: string[] } }>,
     siftsMappings(pdbId: string): Promise<{ [source: string]: { [family: string]: DomainRecord[] } }>,
     siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }>,
     authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
     experimentalMethods(pdbId: string): Promise<string[]>,
     pdbeStructureQualityReport(pdbId: string): Promise<PdbeStructureQualityReport | undefined>,
+    atomInteractions(pdbId: string, authAsymId: string, authSeqId: number): Promise<InteractionsApiData[string]>, // TODO type
 }
 
 
@@ -69,17 +73,39 @@ export class ApiDataProvider implements IDataProvider {
         return result;
     }
 
-    /** Get list of instances of modified residues within a PDB entry. */
-    async modifiedResidues(pdbId: string): Promise<ModifiedResidueRecord[]> {
-        const url = `${this.apiBaseUrl}/pdb/entry/modified_AA_or_NA/${pdbId}`;
+    /** Get list of instances of ligands within a PDB entry. */
+    async ligands(pdbId: string): Promise<ResidueRecord[]> {
+        const url = `${this.apiBaseUrl}/pdb/entry/ligand_monomers/${pdbId}`;
         const json = await this.get(url);
-        const result: ModifiedResidueRecord[] = [];
+        const result: ResidueRecord[] = [];
         for (const record of json[pdbId] ?? []) {
             result.push({
                 entityId: `${record.entity_id}`, // API serves as number, we need string
                 labelAsymId: record.struct_asym_id,
-                authAsymId: record.chain_id,
                 labelSeqId: record.residue_number,
+                authAsymId: record.chain_id,
+                authSeqId: record.author_residue_number,
+                authInsCode: record.author_insertion_code ?? '',
+                compoundId: record.chem_comp_id,
+                compoundName: record.chem_comp_name,
+            });
+        }
+        return result;
+    }
+
+    /** Get list of instances of modified residues within a PDB entry. */
+    async modifiedResidues(pdbId: string): Promise<ResidueRecord[]> {
+        const url = `${this.apiBaseUrl}/pdb/entry/modified_AA_or_NA/${pdbId}`;
+        const json = await this.get(url);
+        const result: ResidueRecord[] = [];
+        for (const record of json[pdbId] ?? []) {
+            result.push({
+                entityId: `${record.entity_id}`, // API serves as number, we need string
+                labelAsymId: record.struct_asym_id,
+                labelSeqId: record.residue_number,
+                authAsymId: record.chain_id,
+                authSeqId: record.author_residue_number,
+                authInsCode: record.author_insertion_code ?? '',
                 compoundId: record.chem_comp_id,
                 compoundName: record.chem_comp_name,
             });
@@ -155,7 +181,8 @@ export class ApiDataProvider implements IDataProvider {
             for (const method of record.experimental_method ?? []) {
                 methods.push(method);
             }
-        } return methods;
+        }
+        return methods;
     }
 
     /** Get PDBe Structure Quality Report */
@@ -163,9 +190,13 @@ export class ApiDataProvider implements IDataProvider {
         const url = `${this.apiBaseUrl}/validation/residuewise_outlier_summary/entry/${pdbId}`;
         const json = await this.get(url);
         const data = json[pdbId] as PdbeStructureQualityReport;
-        // console.log('validation data:', data)
-        // console.log('validation datum:', data.molecules[0].chains[0].models[0].residues[0])
         return data;
+    }
+
+    async atomInteractions(pdbId: string, authAsymId: string, authSeqId: number) {
+        const url = `${this.apiBaseUrl}/pdb/bound_ligand_interactions/${pdbId}/${authAsymId}/${authSeqId}?preserve_case=true`;
+        const json: InteractionsApiData = await this.get(url);
+        return json[pdbId] ?? [];
     }
 }
 
@@ -265,12 +296,14 @@ export interface EntityRecord {
     chains: string[],
 }
 
-/** Represents one instance of a modified residue. */
-export interface ModifiedResidueRecord {
+/** Represents one instance of a ligand or modified residue. */
+export interface ResidueRecord {
     entityId: string,
     labelAsymId: string,
-    authAsymId: string,
     labelSeqId: number,
+    authAsymId: string,
+    authSeqId: number,
+    authInsCode: string,
     /** Compound code, e.g. 'MSE' */
     compoundId: string,
     /** Full compound code, e.g. 'Selenomethionine' */
@@ -300,6 +333,36 @@ interface DomainChunkRecord {
     /** No idea what this was supposed to mean in the original process (probably segment number
      * from the API before cutting into smaller segments by removing missing residues) */
     segment: number,
+}
+
+export interface InteractionsApiData {
+    [pdbId: string]: {
+        interactions: {
+            end: {
+                /** e.g. 'CZ' */
+                atom_names: string[],
+                author_insertion_code?: string,
+                author_residue_number: number,
+                /** auth_asym_id */
+                chain_id: string,
+                chem_comp_id: string,
+            },
+            distance: number,
+            /** e.g. 'AMIDERING', 'CARBONPI', 'DONORPI', 'carbonyl', 'covalent', 'hbond', 'hydrophobic', 'metal_complex', 'polar', 'vdw', 'vdw_clash', 'weak_hbond', 'weak_polar'... */
+            interaction_details: string[],
+            /** e.g.'atom-atom' */
+            interaction_type: string,
+            /** e.g. 'C11' */
+            ligand_atoms: string[],
+        }[],
+        ligand: {
+            author_insertion_code?: string,
+            author_residue_number: number,
+            /** auth_asym_id */
+            chain_id: string,
+            chem_comp_id: string,
+        },
+    }[],
 }
 
 // /** List of supported SIFTS source databases */
