@@ -634,7 +634,6 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domain']) {
-        // TODO color ligands by element (a la PDBconnect Domain tab)
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
         const domainFamilyColors = getDomainFamilyColors(domainInfo);
         const domain = domainInfo[params.source][params.familyId][params.entityId].find(dom => dom.id === params.domainId);
@@ -651,6 +650,9 @@ export class MVSSnapshotProvider {
             base.representations.polymerCartoon?.color({ selector, color });
             base.representations.nonstandardSticks?.color({ selector, color });
             base.structure.component({ selector }).focus();
+        }
+        for (const repr of atomicRepresentations(base.representations)) {
+            applyElementColors(repr);
         }
 
         outDescription.push(`## Domain ${params.domainId}`);
@@ -825,6 +827,7 @@ export class MVSSnapshotProvider {
             applyElementColors(partnerResiduesRepr);
         }
         // TODO volumes
+        // TODO we don't have data for non-preferred-assembly ligands (e.g. 1og5 chain B) - decide what to do (current PDBconnect falls back to builtin, but that's confusing IMHO)
 
         outDescription.push(`## Residue environment for auth ${params.authAsymId} ${params.authSeqId}${params.authInsCode} `);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex(assembly) ${displayedAssembly} `;
@@ -989,7 +992,7 @@ Questions:
     - support simplified query algebra in MVS
 
 
-Weird cases:
+Weird/interesting cases:
 - Ligand is not in preferred assembly:
   - 5ele: entity 6 (PENTAETHYLENE GLYCOL), entity 7 (2-acetamido-2-deoxy-beta-D-glucopyranose)
   - 7nys: entity 5 (CL) not in pref. assembly 2
@@ -1003,6 +1006,8 @@ Weird cases:
 - 1l7c - modified residues not in preferred assembly
 - 2n4n - designed peptide (25res) with 4G6, 4FU, current API misses modified residues, current image generation shows no linkage on modified residues
 - 1d9d - modified residues on DNA (U31, C31)
+- 5cxt, 8qvm - have Text Annotations data
+
 
 -------------------------------------------------------
 

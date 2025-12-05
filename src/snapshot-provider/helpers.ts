@@ -177,8 +177,9 @@ export function applyStandardRepresentations(components: StandardComponentCollec
 }
 
 export function atomicRepresentations(reprs: StandardRepresentationCollection): Builder.Representation[] {
-    return [reprs.ligandSticks, reprs.ionSticks, reprs.nonstandardSticks, reprs.branchedSticks, reprs.branchedLinkageSticks, reprs.waterSticks]
+    return [reprs.ligandSticks, reprs.ionSticks, reprs.nonstandardSticks, reprs.branchedSticks, reprs.branchedLinkageSticks]
         .filter((repr => repr !== undefined) as ((repr: any) => repr is Builder.Representation));
+    // I think it's better not to color waters by default as they can be distracting
 }
 
 export function applyEntityColors(repr: Builder.Representation, colors: { [entityId: string]: ColorT }) {
