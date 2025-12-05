@@ -115,7 +115,7 @@ function ControlsWindow({ model, entryId }: { model: AppModel, entryId: string }
 
     const kinds = model.snapshotListProvider.listSnapshotKinds();
     // const [category, setCategory] = useState<string>(kinds[0]);
-    const [category, setCategory] = useState<string>('pdbconnect_environment');
+    const [category, setCategory] = useState<string>('pdbconnect_text_annotation');
 
     return <div className='ControlsWindow'>
         <h1>{entryId}</h1>
@@ -158,7 +158,7 @@ function ViewButtons({ model, snapshots }: { model: AppModel, snapshots: Snapsho
         {snapshots && snapshots.length > maxSnapshots &&
             <div style={{ marginBottom: 8 }}>
                 <i>Showing only first {maxSnapshots} views in this category, for UI performance reasons. </i>
-                <Button variant='text' onClick={() => setMaxSnapshots(Infinity)}>Show all</Button>
+                <Button variant='text' onClick={() => setMaxSnapshots(Infinity)}>Show all {snapshots.length}</Button>
             </div>
         }
         {snapshots?.slice(0, maxSnapshots).map(s =>

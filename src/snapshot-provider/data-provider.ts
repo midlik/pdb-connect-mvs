@@ -12,7 +12,8 @@ export interface IDataProvider {
     authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
     experimentalMethods(pdbId: string): Promise<string[]>,
     pdbeStructureQualityReport(pdbId: string): Promise<PdbeStructureQualityReport | undefined>,
-    atomInteractions(pdbId: string, authAsymId: string, authSeqId: number): Promise<InteractionsApiData[string]>, // TODO type
+    atomInteractions(pdbId: string, authAsymId: string, authSeqId: number): Promise<InteractionsApiData[string]>,
+    llmAnnotations(pdbId: string): Promise<LlmAnnotations>,
 }
 
 
@@ -198,6 +199,25 @@ export class ApiDataProvider implements IDataProvider {
         const json: InteractionsApiData = await this.get(url);
         return json[pdbId] ?? [];
     }
+
+    async llmAnnotations(pdbId: string) {
+        const url = `${this.apiBaseUrl}/pdb/entry/llm_annotations/summary/${pdbId}`;
+        const json: LlmSummaryApiData = await this.get(url);
+        const out: LlmAnnotations = {};
+        for (const provider of json[pdbId]?.data ?? []) {
+            for (const residue of provider.residueList) {
+                for (const annot of residue.additionalData) {
+                    const entityId = annot.entityId
+                    const labelAsymId = annot.pdbChain; // assuming this is label_asym_id, TODO check with Melanie
+                    const labelSeqId = annot.pdbResidue;
+                    const residueAnnotations = ((out[entityId] ??= {})[labelAsymId] ??= {})[labelSeqId] ??= [];
+                    residueAnnotations.push(annot);
+                }
+            }
+        }
+        return out;
+        // return json[pdbId] ?? [];
+    }
 }
 
 type PdbeStructureQualityReport = {
@@ -363,6 +383,52 @@ export interface InteractionsApiData {
             chem_comp_id: string,
         },
     }[],
+}
+
+export interface LlmAnnotationItem {
+    // pubmedId: 27050129,
+    // pmcId: "PMC4822562",
+    // doi: "10.1107/S2059798316001248",
+    // primaryCitation: "Y",
+    // openAccess: "N",
+    entityId: number,
+    /** label_seq_id */
+    pdbResidue: number,
+    /** auth_seq_id */
+    authorResidueNumber: number,
+    /** TODO ask if label or auth */
+    pdbChain: string,
+    uniprotAccession: string,
+    uniprotResidue: number,
+    sentence: string,
+    // section: "display-objects",
+    // exact: string,
+    // entityType: "residue_name_number",
+    // annotator: "autoannotator_v2.1_quant",
+    aiScore: number,
+}
+
+interface LlmSummaryApiData {
+    [pdbId: string]: {
+        dataType: string,
+        data: {
+            provider: string,
+            residueList: {
+                startIndex: number,
+                endIndex: number,
+                indexType: 'PDB' | 'UNIPROT',
+                additionalData: LlmAnnotationItem[],
+            }[],
+        }[],
+    },
+}
+
+export interface LlmAnnotations {
+    [entityId: string]: {
+        [labelAsymId: string]: {
+            [labelSeqId: number]: LlmAnnotationItem[],
+        },
+    },
 }
 
 // /** List of supported SIFTS source databases */

@@ -2,9 +2,9 @@ import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
-import { ANNOTATION_COLORS, InteractionTypeColors, MODRES_COLORS, VALIDATION_COLORS } from './colors';
+import { ANNOTATION_COLORS, ATOM_INTERACTION_COLORS, CHAIN_ANNOTATED_COLOR, MODRES_COLORS, RESIDUE_ANNOTATED_COLOR, RESIDUE_HIGHLIGHT_COLOR, VALIDATION_COLORS } from './colors';
 import { IDataProvider } from './data-provider';
-import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, normalizeInsertionCode, smartFadedOpacity, StandardRepresentationType, unique } from './helpers';
+import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, max, normalizeInsertionCode, smartFadedOpacity, StandardRepresentationType, unique } from './helpers';
 import { IModelProvider } from './model-provider';
 import { MODEL, PREFERRED, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
@@ -125,6 +125,9 @@ export class MVSSnapshotProvider {
                 break;
             case 'pdbconnect_environment':
                 await this.loadPdbconnectEnvironment(ctx, description, spec.params);
+                break;
+            case 'pdbconnect_text_annotation':
+                await this.loadPdbconnectTextAnnotation(ctx, description, spec.params);
                 break;
         }
         description.push('---');
@@ -631,6 +634,7 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domain']) {
+        // TODO color ligands by element (a la PDBconnect Domain tab)
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
         const domainFamilyColors = getDomainFamilyColors(domainInfo);
         const domain = domainInfo[params.source][params.familyId][params.entityId].find(dom => dom.id === params.domainId);
@@ -775,7 +779,7 @@ export class MVSSnapshotProvider {
             for (const { interactions, ligand } of atomInteractions) {
                 for (const int of interactions) {
                     const details = int.interaction_details;
-                    const color = details.length === 1 ? (InteractionTypeColors[details[0]] ?? InteractionTypeColors._DEFAULT_) : InteractionTypeColors._MIXED_;
+                    const color = details.length === 1 ? (ATOM_INTERACTION_COLORS[details[0]] ?? ATOM_INTERACTION_COLORS._DEFAULT_) : ATOM_INTERACTION_COLORS._MIXED_;
                     // TODO pass colors from frontend (also for entities, domains etc)
                     const formatInteractionType = (type: string) => INTERACTION_NICE_NAMES[type] ?? type;
                     const tooltipHeader = details.length === 1 ?
@@ -820,6 +824,7 @@ export class MVSSnapshotProvider {
             applyEntityColors(partnerResiduesRepr, entityColors);
             applyElementColors(partnerResiduesRepr);
         }
+        // TODO volumes
 
         outDescription.push(`## Residue environment for auth ${params.authAsymId} ${params.authSeqId}${params.authInsCode} `);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex(assembly) ${displayedAssembly} `;
@@ -828,21 +833,60 @@ export class MVSSnapshotProvider {
             outDescription.push(`*\u26A0 Residue is not present in the requested assembly(${params.assemblyId}), displaying the deposited model instead.* `);
         }
     }
-}
 
+    private async loadPdbconnectTextAnnotation(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_text_annotation']) {
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+        const { displayedAssembly } = base.metadata;
 
-function max<T, V>(array: T[], key: (elem: T) => V): T {
-    let argMax = array[0];
-    let max = key(argMax);
-    for (const elem of array) {
-        const value = key(elem)
-        if (value > max) {
-            argMax = elem;
-            max = value;
+        const chainSelector: ComponentExpressionT = { label_asym_id: params.labelAsymId, instance_id: params.instanceId };
+        const residueSelector: ComponentExpressionT = { ...chainSelector, label_seq_id: params.labelSeqId };
+
+        const chainHighlightColor = CHAIN_ANNOTATED_COLOR;
+        base.representations.polymerCartoon?.color({ selector: chainSelector, color: chainHighlightColor });
+        base.representations.nonstandardSticks?.color({ selector: chainSelector, color: chainHighlightColor });
+
+        const annots = await this.dataProvider.llmAnnotations(params.entry);
+        const chainAnnots = annots[params.entityId][params.labelAsymId];
+        const annotResiduesSelector: ComponentExpressionT[] = Object.keys(chainAnnots).map(labelSeqId => ({ ...chainSelector, label_seq_id: Number(labelSeqId) }));
+        base.representations.polymerCartoon?.color({ selector: annotResiduesSelector, color: RESIDUE_ANNOTATED_COLOR });
+        base.representations.nonstandardSticks?.color({ selector: annotResiduesSelector, color: RESIDUE_ANNOTATED_COLOR });
+        for (const labelSeqId in chainAnnots) {
+            const nAnnots = chainAnnots[labelSeqId].length;
+            const bestScore = max(chainAnnots[labelSeqId].map(a => a.aiScore));
+            const flooredBestScore = Math.floor(bestScore * 100) / 100;
+            base.structure
+                .component({ selector: { ...chainSelector, label_seq_id: Number(labelSeqId) } })
+                .tooltip({ text: `<hr>${nAnnots} annotation${nAnnots === 1 ? '' : 's'}, ${nAnnots === 1 ? '' : 'best '} AI score ${flooredBestScore.toFixed(2)}` });
+        }
+
+        if (params.labelSeqId !== undefined) {
+            base.representations.polymerCartoon?.color({ selector: residueSelector, color: RESIDUE_HIGHLIGHT_COLOR });
+            base.representations.nonstandardSticks?.color({ selector: residueSelector, color: RESIDUE_HIGHLIGHT_COLOR });
+            const residueSticks = base.structure
+                .component({ selector: residueSelector })
+                .representation({ type: 'ball_and_stick', size_factor: 1.05 })
+                .color({ color: RESIDUE_HIGHLIGHT_COLOR });
+            applyElementColors(residueSticks);
+            base.structure.component({ selector: residueSelector, custom: { molstar_show_non_covalent_interactions: true } });
+        }
+
+        for (const repr of atomicRepresentations(base.representations)) {
+            applyElementColors(repr);
+        }
+        base.structure.component({ selector: residueSelector }).focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
+        // TODO volumes
+
+        const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
+        if (params.labelSeqId !== undefined) {
+            outDescription.push(`## Text annotations in chain ${params.labelAsymId} residue ${params.labelSeqId}`);
+            outDescription.push(`Showing chain ${params.labelAsymId} (label_asym_id) residue ${params.labelSeqId} (label_seq_id) in ${assemblyText}.`);
+        } else {
+            outDescription.push(`## Text annotations in chain ${params.labelAsymId}`);
+            outDescription.push(`Showing chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         }
     }
-    return argMax;
 }
+
 
 const CustomDataForEmissivePulse = { molstar_representation_params: { emissive: 0 } };
 function makeEmissivePulse(representationRef: string, strength: number = 0.33): MVSAnimationNodeParams<"interpolate"> {
@@ -917,7 +961,7 @@ Current PDBconnect states (Nov2025):
   - Ability to focus and highlight individual interactions
   - Genevieve's suggestions: use Fog (gives better depth perception)
 - Domains - Domain (per domain instance)
-  - Colors don't match those on Summary tab - ask if intended
+  - Colors don't match those on Summary tab - ask if intended -> yes
 - Text Annotations - Highlight entity (example 5cxt)
   - Ability to focus residues and show their interactions
 - Citations - none

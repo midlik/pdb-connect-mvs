@@ -48,7 +48,7 @@ export const VALIDATION_COLORS = {
     HAS_ISSUE: '#b2182b',
 } as const;
 
-export const InteractionTypeColors: Record<string, ColorT> = {
+export const ATOM_INTERACTION_COLORS: Record<string, ColorT> = {
     'AMIDERING': 'red',
     'CARBONPI': 'magenta',
     'DONORPI': 'magenta',
@@ -67,6 +67,16 @@ export const InteractionTypeColors: Record<string, ColorT> = {
     '_MIXED_': 'gray',
     // TODO collect all possible values and decide on colors, this is non-exhaustive list with random colors
 } as const;
+
+/** For all the selected chains in Text Annotation view */
+export const CHAIN_ANNOTATED_COLOR = '#d0dfbb';
+
+/** For all annotated residues in Text Annotation view */
+export const RESIDUE_ANNOTATED_COLOR = '#4E81C3';
+
+/** For highlighted residue in Text Annotation view */
+export const RESIDUE_HIGHLIGHT_COLOR = '#ff8800';
+// export const RESIDUE_HIGHLIGHT_COLOR = RESIDUE_ANNOTATED_COLOR;
 
 
 /** Iterate over the elements of `values` in a cycle (forever). */

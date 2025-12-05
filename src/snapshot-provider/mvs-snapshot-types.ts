@@ -120,6 +120,20 @@ export type SnapshotSpecParams = {
         /** Source of atom interactions to be shown */
         atomInteractions: 'api' | 'builtin' | 'none',
     },
+    pdbconnect_text_annotation: {
+        /** PDB ID */
+        entry: string,
+        /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
+        assemblyId: string,
+        /** Entity identifier (label_entity_id) */
+        entityId: string,
+        /** Chain identifier (label_asym_id) */
+        labelAsymId: string,
+        /** Residue number (label_seq_id) for highlighted residue, `undefined` for showing the whole chain */
+        labelSeqId: number | undefined,
+        /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
+        instanceId: string | undefined,
+    },
 }
 
 export type SnapshotKind = keyof SnapshotSpecParams;
@@ -136,6 +150,7 @@ export const SnapshotKinds = [
     'pdbconnect_summary_modification',
     'pdbconnect_quality',
     'pdbconnect_environment',
+    'pdbconnect_text_annotation',
 ] as const satisfies readonly SnapshotKind[];
 
 export type SnapshotSpec<TKind extends SnapshotKind = SnapshotKind> =

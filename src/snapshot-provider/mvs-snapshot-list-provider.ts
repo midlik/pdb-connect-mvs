@@ -254,6 +254,37 @@ export class MVSSnapshotListProvider {
                 }
                 break;
             }
+            case 'pdbconnect_text_annotation': {
+                const assemblies = await this.dataProvider.assemblies(entryId);
+                const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
+                const modelData = await this.modelProvider.getModel(entryId);
+                const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
+                const annots = await this.dataProvider.llmAnnotations(entryId);
+                for (const entityId in annots) {
+                    const entityAnnots = annots[entityId];
+                    for (const labelAsymId of Object.keys(entityAnnots).sort()) {
+                        const chainAnnots = entityAnnots[labelAsymId];
+                        let instances: (string | undefined)[] = chainInstancesInfo[preferredAssembly].operatorsPerChain[labelAsymId];
+                        if (instances === undefined || instances.length === 0) instances = [undefined];
+                        for (const instanceId of instances) {
+                            out.push({
+                                kind: 'pdbconnect_text_annotation',
+                                name: `Entity ${entityId}: Annotations for chain (label_asym_id ${labelAsymId}, ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
+                                params: { entry: entryId, assemblyId: PREFERRED, entityId, labelAsymId, labelSeqId: undefined, instanceId },
+                            });
+                            for (const labelSeqId in chainAnnots) {
+                                const residueAnnots = chainAnnots[labelSeqId];
+                                out.push({
+                                    kind: 'pdbconnect_text_annotation',
+                                    name: `Entity ${entityId}: Annotations for residue ${labelSeqId} [auth ${residueAnnots[0].authorResidueNumber}] (label_asym_id ${labelAsymId}, ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
+                                    params: { entry: entryId, assemblyId: PREFERRED, entityId, labelAsymId, labelSeqId: Number(labelSeqId), instanceId },
+                                });
+                            }
+                        }
+                    }
+                }
+                break;
+            }
             default:
                 throw new Error(`Invalid snapshot kind: ${kind}`);
         }

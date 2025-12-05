@@ -177,9 +177,8 @@ export function applyStandardRepresentations(components: StandardComponentCollec
 }
 
 export function atomicRepresentations(reprs: StandardRepresentationCollection): Builder.Representation[] {
-    return [reprs.ligandSticks, reprs.ionSticks, reprs.nonstandardSticks, reprs.branchedSticks, reprs.branchedLinkageSticks]
+    return [reprs.ligandSticks, reprs.ionSticks, reprs.nonstandardSticks, reprs.branchedSticks, reprs.branchedLinkageSticks, reprs.waterSticks]
         .filter((repr => repr !== undefined) as ((repr: any) => repr is Builder.Representation));
-    // not including waterSticks, because they are colored red anyway
 }
 
 export function applyEntityColors(repr: Builder.Representation, colors: { [entityId: string]: ColorT }) {
@@ -357,6 +356,21 @@ export function unique<T, K>(values: T[], key: (v: T) => K = ((x: T) => x) as an
         }
     }
     return out;
+}
+
+export function max<T>(array: T[]): T;
+export function max<T, V>(array: T[], key: (elem: T) => V): T;
+export function max<T, V>(array: T[], key: (elem: T) => V = ((x: T) => x) as any): T {
+    let argMax = array[0];
+    let max = key(argMax);
+    for (const elem of array) {
+        const value = key(elem)
+        if (value > max) {
+            argMax = elem;
+            max = value;
+        }
+    }
+    return argMax;
 }
 
 
