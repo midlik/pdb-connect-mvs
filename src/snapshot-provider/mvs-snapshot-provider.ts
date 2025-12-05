@@ -524,15 +524,16 @@ export class MVSSnapshotProvider {
 
         const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it?
         const entityColors = getEntityColors(entities);
+        const entityInstanceSelector: ComponentExpressionT = { label_entity_id: params.entityId, label_asym_id: params.labelAsymId, instance_id: params.instanceId };
 
         for (const repr of Object.values(base.representations)) {
-            applyEntityColors(repr, { [params.entityId]: entityColors[params.entityId] });
+            repr.color({ selector: entityInstanceSelector, color: entityColors[params.entityId] });
         }
         // TODO Molstar: coloring by element within selection (entity)
         // for (const repr of atomicRepresentations(base.representations)) {
         //     applyElementColors(repr);
         // }
-        base.structure.component({ selector: { label_entity_id: params.entityId } }).focus();
+        base.structure.component({ selector: entityInstanceSelector }).focus();
 
         // const entityType = decideEntityType(entities[params.entityId]);
         // const entityComponents = applyStandardComponentsForChain(base.structure, params.labelAsymId, params.instanceId, entityType, { modifiedResidues });
