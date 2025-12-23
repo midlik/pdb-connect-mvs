@@ -59,7 +59,7 @@ export class MVSSnapshotProvider {
         public readonly config: MVSSnapshotProviderConfig,
     ) { }
 
-    async getSnapshot(spec: SnapshotSpec, asMultistate: boolean): Promise<MVSData> {
+    async getSnapshot(spec: SnapshotSpec): Promise<MVSData> {
         const builder = MVSData.createBuilder();
         const model = builder
             .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
@@ -133,13 +133,8 @@ export class MVSSnapshotProvider {
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
         description.push(`- **View params:** ${JSON.stringify(spec.params, undefined, 1)}`);
-        // TODO Molstar: ensure that camera transition is played when loading a multistate MVS! (or give up animations if not possible)
-        if (asMultistate) {
-            const snapshot = builder.getSnapshot({ title: spec.name, description: description.join('\n\n'), linger_duration_ms: 10_000 });
-            return MVSData.createMultistate([snapshot], { title: spec.name, description: description.join('\n\n') });
-        } else {
-            return builder.getState({ title: spec.name, description: description.join('\n\n') });
-        }
+        const snapshot = builder.getSnapshot({ title: spec.name, description: description.join('\n\n'), linger_duration_ms: 10_000, transition_duration_ms: 500 });
+        return MVSData.createMultistate([snapshot], { title: spec.name, description: description.join('\n\n') });
     }
 
     private async loadEntry(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['entry']) {
@@ -969,6 +964,7 @@ Current PDBconnect states (Nov2025):
 - Text Annotations - Highlight entity (example 5cxt)
   - Ability to focus residues and show their interactions
 - Citations - none
+- TODO view for assembly symmetry (as a toggle button?)
 
 (Summary tab - all shown on preferred assembly)
 (Model Quality tab - all shown on model)

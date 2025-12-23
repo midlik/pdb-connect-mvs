@@ -208,7 +208,7 @@ export class ApiDataProvider implements IDataProvider {
             for (const residue of provider.residueList) {
                 for (const annot of residue.additionalData) {
                     const entityId = annot.entityId
-                    const labelAsymId = annot.pdbChain; // assuming this is label_asym_id, TODO check with Melanie
+                    const labelAsymId = annot.pdbChain; // This is `label_asym_id`, comes from Validation XML field `said`, confirmed with Melanie
                     const labelSeqId = annot.pdbResidue;
                     const residueAnnotations = ((out[entityId] ??= {})[labelAsymId] ??= {})[labelSeqId] ??= [];
                     residueAnnotations.push(annot);
