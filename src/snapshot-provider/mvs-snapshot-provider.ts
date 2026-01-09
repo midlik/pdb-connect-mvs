@@ -7,7 +7,7 @@ import type { IDataProvider } from './data-provider';
 import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, max, normalizeInsertionCode, smartFadedOpacity, StandardRepresentationType, unique } from './helpers';
 import type { IModelProvider } from './model-provider';
 import { MODEL, PREFERRED, type SnapshotSpec, type SnapshotSpecParams } from './mvs-snapshot-types';
-import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
+import { chainSurroundings, getChainInfo, structurePolymerResidueCount } from './structure-info';
 
 
 /** Level of opacity used for domain and ligand images */
@@ -65,71 +65,8 @@ export class MVSSnapshotProvider {
             .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
             .parse({ format: this.config.PdbStructureFormat });
 
-        const ctx: BuilderContext = { root: builder, model: model };
-
-        const description: string[] = [];
-        switch (spec.kind) {
-            case 'entry':
-                await this.loadEntry(ctx, description, spec.params);
-                break;
-            case 'assembly':
-                await this.loadAssembly(ctx, description, spec.params);
-                break;
-            case 'entity':
-                await this.loadEntity(ctx, description, spec.params);
-                break;
-            case 'domain':
-                await this.loadDomain(ctx, description, spec.params);
-                break;
-            case 'ligand':
-                await this.loadLigand(ctx, description, spec.params);
-                break;
-            case 'modres':
-                await this.loadModres(ctx, description, spec.params);
-                break;
-            case 'bfactor':
-                await this.loadBfactor(ctx, description, spec.params);
-                break;
-            case 'validation':
-                await this.loadValidation(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_default':
-                await this.loadPdbconnectSummaryDefault(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_macromolecule':
-                await this.loadPdbconnectSummaryMacromolecule(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_all_ligands':
-                await this.loadPdbconnectSummaryAllLigands(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_ligand':
-                await this.loadPdbconnectSummaryLigand(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_domains_default':
-                await this.loadPdbconnectSummaryDomainsDefault(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_domains_in_source':
-                await this.loadPdbconnectSummaryDomainsInSource(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_domain':
-                await this.loadPdbconnectSummaryDomain(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_all_modifications':
-                await this.loadPdbconnectSummaryAllModifications(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_summary_modification':
-                await this.loadPdbconnectSummaryModification(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_quality':
-                await this.loadPdbconnectQuality(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_environment':
-                await this.loadPdbconnectEnvironment(ctx, description, spec.params);
-                break;
-            case 'pdbconnect_text_annotation':
-                await this.loadPdbconnectTextAnnotation(ctx, description, spec.params);
-                break;
-        }
+        const ctx = await this.loadSnapshotSpec({ root: builder, model: model }, spec);
+        const description = ctx.description;
         description.push('---');
         description.push(`- **View kind:** ${spec.kind}`);
         description.push(`- **View params:** ${JSON.stringify(spec.params, undefined, 1)}`);
@@ -137,7 +74,32 @@ export class MVSSnapshotProvider {
         return MVSData.createMultistate([snapshot], { title: spec.name, description: description.join('\n\n') });
     }
 
-    private async loadEntry(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['entry']) {
+    private async loadSnapshotSpec(ctx: BuilderContext, spec: SnapshotSpec) {
+        switch (spec.kind) {
+            case 'entry': return await this.loadEntry(ctx, spec.params);
+            case 'assembly': return await this.loadAssembly(ctx, spec.params);
+            case 'entity': return await this.loadEntity(ctx, spec.params);
+            case 'domain': return await this.loadDomain(ctx, spec.params);
+            case 'ligand': return await this.loadLigand(ctx, spec.params);
+            case 'modres': return await this.loadModres(ctx, spec.params);
+            case 'bfactor': return await this.loadBfactor(ctx, spec.params);
+            case 'validation': return await this.loadValidation(ctx, spec.params);
+            case 'pdbconnect_summary_default': return await this.loadPdbconnectSummaryDefault(ctx, spec.params);
+            case 'pdbconnect_summary_macromolecule': return await this.loadPdbconnectSummaryMacromolecule(ctx, spec.params);
+            case 'pdbconnect_summary_all_ligands': return await this.loadPdbconnectSummaryAllLigands(ctx, spec.params);
+            case 'pdbconnect_summary_ligand': return await this.loadPdbconnectSummaryLigand(ctx, spec.params);
+            case 'pdbconnect_summary_domains_default': return await this.loadPdbconnectSummaryDomainsDefault(ctx, spec.params);
+            case 'pdbconnect_summary_domains_in_source': return await this.loadPdbconnectSummaryDomainsInSource(ctx, spec.params);
+            case 'pdbconnect_summary_domain': return await this.loadPdbconnectSummaryDomain(ctx, spec.params);
+            case 'pdbconnect_summary_all_modifications': return await this.loadPdbconnectSummaryAllModifications(ctx, spec.params);
+            case 'pdbconnect_summary_modification': return await this.loadPdbconnectSummaryModification(ctx, spec.params);
+            case 'pdbconnect_quality': return await this.loadPdbconnectQuality(ctx, spec.params);
+            case 'pdbconnect_environment': return await this.loadPdbconnectEnvironment(ctx, spec.params);
+            case 'pdbconnect_text_annotation': return await this.loadPdbconnectTextAnnotation(ctx, spec.params);
+        }
+    }
+
+    private async loadEntry(ctx: BuilderContext, params: SnapshotSpecParams['entry']) {
         const struct = ctx.model.modelStructure();
         struct.component().focus();
 
@@ -151,10 +113,12 @@ export class MVSSnapshotProvider {
             applyEntityColors(repr, entityColors);
         }
 
-        outDescription.push('## Deposited model');
+        const description: string[] = [];
+        description.push('## Deposited model');
+        return { ...ctx, description };
     }
 
-    private async loadAssembly(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['assembly']) {
+    private async loadAssembly(ctx: BuilderContext, params: SnapshotSpecParams['assembly']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const assInfo = assembliesInfo.find(ass => ass.assemblyId === params.assemblyId);
         const struct = ctx.model.assemblyStructure({ assembly_id: params.assemblyId });
@@ -170,12 +134,14 @@ export class MVSSnapshotProvider {
             applyEntityColors(repr, entityColors);
         }
 
-        outDescription.push(`## Assembly ${params.assemblyId}`);
-        outDescription.push(`This assembly is a ${assInfo?.form}-${assInfo?.name}.`);
-        if (assInfo?.preferred) outDescription.push(`This is the preferred assembly.`);
+        const description: string[] = [];
+        description.push(`## Assembly ${params.assemblyId}`);
+        description.push(`This assembly is a ${assInfo?.form}-${assInfo?.name}.`);
+        if (assInfo?.preferred) description.push(`This is the preferred assembly.`);
+        return { ...ctx, description };
     }
 
-    private async loadEntity(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['entity']) {
+    private async loadEntity(ctx: BuilderContext, params: SnapshotSpecParams['entity']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId;
 
@@ -215,19 +181,21 @@ export class MVSSnapshotProvider {
             repr.color({ color: entityColors[params.entityId] });
         }
 
-        outDescription.push(`## Entity ${params.entityId}`);
+        const description: string[] = [];
+        description.push(`## Entity ${params.entityId}`);
         const entityName = entities[params.entityId].name;
-        outDescription.push((entityName ? `__${entityName}__` : '*Entity name not available*') + ` (${entityType})`);
+        description.push((entityName ? `__${entityName}__` : '*Entity name not available*') + ` (${entityType})`);
         if (theAssembly === preferredAssembly) {
-            outDescription.push(`Showing in assembly ${theAssembly} (preferred).`);
+            description.push(`Showing in assembly ${theAssembly} (preferred).`);
         } else if (theAssembly !== undefined) {
-            outDescription.push(`Showing in assembly ${theAssembly}.`);
+            description.push(`Showing in assembly ${theAssembly}.`);
         } else {
-            outDescription.push(`Showing in the deposited model.`);
+            description.push(`Showing in the deposited model.`);
         }
+        return { ...ctx, description };
     }
 
-    private async loadDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['domain']) {
+    private async loadDomain(ctx: BuilderContext, params: SnapshotSpecParams['domain']) {
         const struct = ctx.model.modelStructure();
 
         const coverages = await this.dataProvider.authChainCoverages(params.entry);
@@ -260,26 +228,29 @@ export class MVSSnapshotProvider {
             modresComp.representation({ type: 'ball_and_stick' }).color({ color });
         }
 
+        const description: string[] = [];
         const chainDesc = shownAuthChain !== shownPolymerLabelChain ? `${shownPolymerLabelChain} [auth ${shownAuthChain}]` : shownPolymerLabelChain;
-        outDescription.push(
+        description.push(
             `## Domain ${params.source} ${params.familyId} in entity ${params.entityId}`,
             `PDB entry ${params.entry} contains ${domainsInEntity.length} ${domainsInEntity.length === 1 ? 'copy' : 'copies'} of ${params.source} domain ${params.familyId} in entity ${params.entityId}.`,
             `Showing ${domainsInChain.length} ${domainsInChain.length === 1 ? 'copy' : 'copies'} in chain ${chainDesc}.`,
         );
+        return { ...ctx, description };
     }
 
-    private async loadLigand(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['ligand']) {
+    private async loadLigand(ctx: BuilderContext, params: SnapshotSpecParams['ligand']) {
         const entities = await this.dataProvider.entities(params.entry);
         const entityRecord = Object.values(entities).find(ent => ent.compIds.length === 1 && ent.compIds[0] === params.compId);
+        const description: string[] = [];
         if (entityRecord === undefined) {
-            outDescription.push(`Ligand ${params.compId} not found`);
-            return;
+            description.push(`Ligand ${params.compId} not found`);
+            return { ...ctx, description };
         }
         let labelAsymId: string;
         if (params.labelAsymId) {
             if (!entityRecord.chains.includes(params.labelAsymId)) {
-                outDescription.push(`Ligand ${params.compId} not found in chain ${params.labelAsymId}`);
-                return;
+                description.push(`Ligand ${params.compId} not found in chain ${params.labelAsymId}`);
+                return { ...ctx, description };
             }
             labelAsymId = params.labelAsymId;
         } else {
@@ -314,11 +285,12 @@ export class MVSSnapshotProvider {
         const chainInfo = getChainInfo(modelData);
         const authAsymId = chainInfo[labelAsymId].authChainId;
 
-        outDescription.push(`## Ligand ${params.compId}`);
-        outDescription.push(`Showing ligand **${entityRecord.name}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}] in the deposited model.`);
+        description.push(`## Ligand ${params.compId}`);
+        description.push(`Showing ligand **${entityRecord.name}** (${params.compId}) in chain ${labelAsymId} [auth ${authAsymId}] in the deposited model.`);
+        return { ...ctx, description };
     }
 
-    private async loadModres(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['modres']) {
+    private async loadModres(ctx: BuilderContext, params: SnapshotSpecParams['modres']) {
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
         const preferredAssembly = assembliesInfo.find(ass => ass.preferred)?.assemblyId; // preferred assembly
 
@@ -343,17 +315,19 @@ export class MVSSnapshotProvider {
         const modresColors = getModresColors(modifiedResidues);
         modresRepr.color({ color: modresColors[params.compId] ?? MODRES_COLORS[0] });
 
+        const description: string[] = [];
         const modresName = modifiedResidues.find(r => r.compoundId === params.compId)?.compoundName;
-        outDescription.push(`## Modified residue ${params.compId}`);
-        outDescription.push(modresName ? `__${modresName}__` : '*Modified residue name not available*');
+        description.push(`## Modified residue ${params.compId}`);
+        description.push(modresName ? `__${modresName}__` : '*Modified residue name not available*');
         if (preferredAssembly !== undefined) {
-            outDescription.push(`Showing in assembly ${preferredAssembly} (preferred).`);
+            description.push(`Showing in assembly ${preferredAssembly} (preferred).`);
         } else {
-            outDescription.push(`Showing in the deposited model.`);
+            description.push(`Showing in the deposited model.`);
         }
+        return { ...ctx, description };
     }
 
-    private async loadBfactor(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['bfactor']) {
+    private async loadBfactor(ctx: BuilderContext, params: SnapshotSpecParams['bfactor']) {
         const struct = ctx.model.modelStructure();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -376,11 +350,13 @@ export class MVSSnapshotProvider {
         struct.component().tooltip({ text: '<hr>B-factor:' });
         struct.tooltipFromSource({ schema: 'all_atomic', category_name: 'atom_site', field_name: 'B_iso_or_equiv' });
 
-        outDescription.push(`## B-factor`);
-        outDescription.push(`Showing B-factor for the deposited model, colored by Plasma color scheme (0 = blue, 120 = yellow). Values above 120 are clipped.`);
+        const description: string[] = [];
+        description.push(`## B-factor`);
+        description.push(`Showing B-factor for the deposited model, colored by Plasma color scheme (0 = blue, 120 = yellow). Values above 120 are clipped.`);
+        return { ...ctx, description };
     }
 
-    private async loadValidation(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['validation']) {
+    private async loadValidation(ctx: BuilderContext, params: SnapshotSpecParams['validation']) {
         const struct = ctx.model.modelStructure();
 
         const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
@@ -398,6 +374,8 @@ export class MVSSnapshotProvider {
         `;
         const annotationRows: string[] = [];
 
+        const description: string[] = [];
+        description.push(`## Validation`);
         const validationReport = await this.dataProvider.pdbeStructureQualityReport(params.entry);
         if (validationReport !== undefined) {
             for (const molecule of validationReport.molecules) {
@@ -420,23 +398,27 @@ export class MVSSnapshotProvider {
             });
             struct.component().tooltip({ text: '<hr>Validation:' });
             struct.tooltipFromUri({ uri: annotationUri, format: 'cif', schema: 'all_atomic', category_name: 'annot', field_name: 'tooltip' });
-            outDescription.push(`## Validation`);
             if (params.validation_type === 'issue_count') {
-                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry validation issue types. White - no issues, yellow - one issue type, orange - two issue types, red - three or more issue types.`);
+                description.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry validation issue types. White - no issues, yellow - one issue type, orange - two issue types, red - three or more issue types.`);
             } else {
-                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by presence of "${params.validation_type}" validation issues. White - no issue, red - has issues.`);
+                description.push(`**PDBe Structure Quality Report:** Residues are coloured by presence of "${params.validation_type}" validation issues. White - no issue, red - has issues.`);
             }
         } else {
             for (const repr of Object.values(representations)) {
                 repr.color({ color: VALIDATION_COLORS.NOT_APPLICABLE });
             }
             struct.component().tooltip({ text: '<hr>Validation: Not available' });
-            outDescription.push(`## Validation`);
-            outDescription.push(`PDBe Structure Quality Report not available for this entry.`);
+            description.push(`PDBe Structure Quality Report not available for this entry.`);
         }
+        return { ...ctx, description };
     }
 
     private async _loadPdbconnectBase(ctx: BuilderContext, params: { entry: string, assemblyId: string, ensureChain?: string }) {
+        // TODO include model loading here:
+        // const model = builder
+        //     .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', spec.params.entry) })
+        //     .parse({ format: this.config.PdbStructureFormat });
+
         let displayedAssembly = params.assemblyId === PREFERRED ?
             getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
@@ -466,7 +448,7 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_default'] & { ensureEntity?: string, ensureChain?: string }) {
+    private async loadPdbconnectSummaryDefault(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_default'] & { ensureEntity?: string, ensureChain?: string }) {
         const base = await this._loadPdbconnectBase(ctx, params);
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
@@ -478,23 +460,25 @@ export class MVSSnapshotProvider {
         }
         // TODO ensure default Molstar show-environment behavior uses either entity colors or all-gray -> PDBeMolstar does it somehow but now idea how (+ ideally increase bubble size)
 
+        const description: string[] = [];
         if (params.assemblyId === PREFERRED) {
-            outDescription.push(`## Preferred complex`);
+            description.push(`## Preferred complex`);
         } else {
-            outDescription.push(`## Complex ${base.metadata.displayedAssembly}`);
+            description.push(`## Complex ${base.metadata.displayedAssembly}`);
         }
-        outDescription.push(`This is complex (assembly) ${base.metadata.displayedAssembly}.`);
+        description.push(`This is complex (assembly) ${base.metadata.displayedAssembly}.`);
         return {
             ...base,
             metadata: {
                 ...base.metadata,
                 entities,
                 entityColors,
-            }
+            },
+            description,
         };
     }
 
-    private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
+    private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = base.metadata;
 
@@ -534,15 +518,20 @@ export class MVSSnapshotProvider {
         //     .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
         // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
 
-        outDescription.push(`## Macromolecule ${params.entityId}`);
+        const description: string[] = [];
+        description.push(`## Macromolecule ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
+        description.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
-            outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+            description.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryAllLigands(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
+    private async loadPdbconnectSummaryAllLigands(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId });
         const { displayedAssembly } = base.metadata;
 
@@ -559,36 +548,51 @@ export class MVSSnapshotProvider {
             }
         }
 
-        outDescription.push(`## All ligands`);
+        const description: string[] = [];
+        description.push(`## All ligands`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`Overview of all ligands in ${assemblyText}.`);
+        description.push(`Overview of all ligands in ${assemblyText}.`);
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryLigand(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
-        const base = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+    private async loadPdbconnectSummaryLigand(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
+        const base = await this.loadPdbconnectSummaryDefault(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly, entities } = base.metadata;
 
         base.structure
             .component({ selector: { label_asym_id: params.labelAsymId, instance_id: params.instanceId } })
             .focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
 
-        outDescription.push(`## Ligand entity ${params.entityId}`);
+        const description: string[] = [];
+        description.push(`## Ligand entity ${params.entityId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`This is ligand entity ${params.entityId} **${entities[params.entityId].compIds[0]}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
+        description.push(`This is ligand entity ${params.entityId} **${entities[params.entityId].compIds[0]}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
-            outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+            description.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryDomainsDefault(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_default']) {
+    private async loadPdbconnectSummaryDomainsDefault(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_domains_default']) {
         const base = await this._loadPdbconnectBase(ctx, params);
         const { displayedAssembly } = base.metadata;
-        outDescription.push(`## Domains - default view`);
+        const description: string[] = [];
+        description.push(`## Domains - default view`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`Showing ${assemblyText} (nothing highlighted here, select domain source or specific domain to see highlights).`);
+        description.push(`Showing ${assemblyText} (nothing highlighted here, select domain source or specific domain to see highlights).`);
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryDomainsInSource(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domains_in_source']) {
+    private async loadPdbconnectSummaryDomainsInSource(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_domains_in_source']) {
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
         const domainFamilyColors = getDomainFamilyColors(domainInfo); // TODO cache? (incl. many things that need to be computed just once, e.g. getChainInfo)
 
@@ -611,12 +615,17 @@ export class MVSSnapshotProvider {
             }
         }
 
-        outDescription.push(`## Domains in ${params.source}`);
+        const description: string[] = [];
+        description.push(`## Domains in ${params.source}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`Showing all domains from source ${params.source} in ${assemblyText}.`);
+        description.push(`Showing all domains from source ${params.source} in ${assemblyText}.`);
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryDomain(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_domain']) {
+    private async loadPdbconnectSummaryDomain(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_domain']) {
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
         const domainFamilyColors = getDomainFamilyColors(domainInfo);
         const domain = domainInfo[params.source][params.familyId][params.entityId].find(dom => dom.id === params.domainId);
@@ -638,12 +647,17 @@ export class MVSSnapshotProvider {
             applyElementColors(repr);
         }
 
-        outDescription.push(`## Domain ${params.domainId}`);
+        const description: string[] = [];
+        description.push(`## Domain ${params.domainId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`Showing ${params.source} ${params.familyId} domain ${params.domainId} in ${assemblyText}.`);
+        description.push(`Showing ${params.source} ${params.familyId} domain ${params.domainId} in ${assemblyText}.`);
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryAllModifications(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_all_modifications']) {
+    private async loadPdbconnectSummaryAllModifications(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_all_modifications']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId });
         const { displayedAssembly } = base.metadata;
 
@@ -655,12 +669,17 @@ export class MVSSnapshotProvider {
             }
         }
 
-        outDescription.push(`## All modified residues`);
+        const description: string[] = [];
+        description.push(`## All modified residues`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`Overview of all modified residues in ${assemblyText}.`);
+        description.push(`Overview of all modified residues in ${assemblyText}.`);
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectSummaryModification(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_modification']) {
+    private async loadPdbconnectSummaryModification(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_summary_modification']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = base.metadata;
         const entities = await this.dataProvider.entities(params.entry);
@@ -682,19 +701,26 @@ export class MVSSnapshotProvider {
             .component({ selector: { label_asym_id: params.labelAsymId, label_seq_id: params.labelSeqId, instance_id: params.instanceId } })
             .focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
 
-        outDescription.push(`## Modified residue ${params.compId}`);
+        const description: string[] = [];
+        description.push(`## Modified residue ${params.compId}`);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
-        outDescription.push(`This is modified residue **${params.compId}** ${params.labelSeqId} (label_seq_id) in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
+        description.push(`This is modified residue **${params.compId}** ${params.labelSeqId} (label_seq_id) in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
-            outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+            description.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectQuality(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_quality']) {
+    private async loadPdbconnectQuality(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_quality']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId });
         const { displayedAssembly } = base.metadata;
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
 
+        const description: string[] = [];
+        description.push(`## Validation`);
         const validationReport = await this.dataProvider.pdbeStructureQualityReport(params.entry);
         if (validationReport !== undefined) {
             const annotationCif = [
@@ -726,26 +752,28 @@ export class MVSSnapshotProvider {
             });
             base.structure.component().tooltip({ text: '<hr>Validation:' });
             base.structure.tooltipFromUri({ uri: annotationUri, format: 'cif', schema: 'all_atomic', category_name: 'validation', field_name: 'tooltip' });
-            outDescription.push(`## Validation`);
             if (params.validation_type === 'issue_count') {
-                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry validation issue types. White - no issues, yellow - one issue type, orange - two issue types, red - three or more issue types.`);
+                description.push(`**PDBe Structure Quality Report:** Residues are coloured by the number of geometry validation issue types. White - no issues, yellow - one issue type, orange - two issue types, red - three or more issue types.`);
             } else {
-                outDescription.push(`**PDBe Structure Quality Report:** Residues are coloured by presence of "${params.validation_type}" validation issues. White - no issue, red - has issues.`);
+                description.push(`**PDBe Structure Quality Report:** Residues are coloured by presence of "${params.validation_type}" validation issues. White - no issue, red - has issues.`);
             }
-            outDescription.push(`Displaying ${assemblyText}.`);
+            description.push(`Displaying ${assemblyText}.`);
         } else {
             for (const repr of Object.values(base.representations)) {
                 repr.color({ color: VALIDATION_COLORS.NOT_APPLICABLE });
             }
             base.structure.component().tooltip({ text: '<hr>Validation: Not available' });
-            outDescription.push(`## Validation`);
-            outDescription.push(`PDBe Structure Quality Report not available for this entry.`);
-            outDescription.push(`Displaying ${assemblyText}.`);
+            description.push(`PDBe Structure Quality Report not available for this entry.`);
+            description.push(`Displaying ${assemblyText}.`);
         }
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectEnvironment(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_environment']) {
-        const base = await this.loadPdbconnectSummaryDefault(ctx, [], { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+    private async loadPdbconnectEnvironment(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_environment']) {
+        const base = await this.loadPdbconnectSummaryDefault(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly, entityColors } = base.metadata;
 
         base.structure
@@ -810,15 +838,20 @@ export class MVSSnapshotProvider {
         // TODO volumes
         // TODO we don't have data for non-preferred-assembly ligands (e.g. 1og5 chain B) - decide what to do (current PDBconnect falls back to builtin, but that's confusing IMHO)
 
-        outDescription.push(`## Residue environment for auth ${params.authAsymId} ${params.authSeqId}${params.authInsCode} `);
+        const description: string[] = [];
+        description.push(`## Residue environment for auth ${params.authAsymId} ${params.authSeqId}${params.authInsCode} `);
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex(assembly) ${displayedAssembly} `;
-        outDescription.push(`This is residue auth ${params.authSeqId}${params.authInsCode} in chain auth ${params.authAsymId} in ${assemblyText}.`);
+        description.push(`This is residue auth ${params.authSeqId}${params.authInsCode} in chain auth ${params.authAsymId} in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
-            outDescription.push(`*\u26A0 Residue is not present in the requested assembly(${params.assemblyId}), displaying the deposited model instead.* `);
+            description.push(`*\u26A0 Residue is not present in the requested assembly(${params.assemblyId}), displaying the deposited model instead.* `);
         }
+        return {
+            ...base,
+            description,
+        };
     }
 
-    private async loadPdbconnectTextAnnotation(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_text_annotation']) {
+    private async loadPdbconnectTextAnnotation(ctx: BuilderContext, params: SnapshotSpecParams['pdbconnect_text_annotation']) {
         const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = base.metadata;
 
@@ -860,14 +893,19 @@ export class MVSSnapshotProvider {
         base.structure.component({ selector: residueSelector }).focus({ radius_factor: FOCUS_RADIUS_FACTOR, radius_extent: FOCUS_RADIUS_EXTENT });
         // TODO volumes
 
+        const description: string[] = [];
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
         if (params.labelSeqId !== undefined) {
-            outDescription.push(`## Text annotations in chain ${params.labelAsymId} residue ${params.labelSeqId}`);
-            outDescription.push(`Showing chain ${params.labelAsymId} (label_asym_id) residue ${params.labelSeqId} (label_seq_id) in ${assemblyText}.`);
+            description.push(`## Text annotations in chain ${params.labelAsymId} residue ${params.labelSeqId}`);
+            description.push(`Showing chain ${params.labelAsymId} (label_asym_id) residue ${params.labelSeqId} (label_seq_id) in ${assemblyText}.`);
         } else {
-            outDescription.push(`## Text annotations in chain ${params.labelAsymId}`);
-            outDescription.push(`Showing chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
+            description.push(`## Text annotations in chain ${params.labelAsymId}`);
+            description.push(`Showing chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         }
+        return {
+            ...base,
+            description,
+        };
     }
 }
 
