@@ -1,7 +1,7 @@
-import { IDataProvider } from './data-provider';
+import type { IDataProvider } from './data-provider';
 import { entityIsLigand, entityIsMacromolecule, getPreferredAssembly, listEntityInstancesInAssembly, listEntityInstancesInModel, uniqueModresCompIds } from './helpers';
-import { IModelProvider } from './model-provider';
-import { MODEL, PREFERRED, SnapshotKind, SnapshotKinds, SnapshotSpec, ValidationTypes } from './mvs-snapshot-types';
+import type { IModelProvider } from './model-provider';
+import { MODEL, PREFERRED, type SnapshotKind, SnapshotKinds, type SnapshotSpec, ValidationTypes } from './mvs-snapshot-types';
 import { getChainInstancesInAssemblies } from './structure-info';
 
 
@@ -210,7 +210,6 @@ export class MVSSnapshotListProvider {
                         });
                     }
                 }
-                // TODO ?ensure non-preferred assembly modres are listed in frontend? (1l7c)
                 break;
             }
             case 'pdbconnect_quality': {

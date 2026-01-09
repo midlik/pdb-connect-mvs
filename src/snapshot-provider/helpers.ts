@@ -1,13 +1,10 @@
-import * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
-import { ColorT, HexColorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
+import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
+import type { ColorT, HexColorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { IonNames } from 'molstar/lib/mol-model/structure/model/types/ions';
-import { LipidNames } from 'molstar/lib/mol-model/structure/model/types/lipids';
 import { SaccharideNames } from 'molstar/lib/mol-model/structure/model/types/saccharides';
-import { ElementSymbolColors } from 'molstar/lib/mol-theme/color/element-symbol';
-import { Color } from 'molstar/lib/mol-util/color';
 import { ANNOTATION_COLORS, cycleIterator, ENTITY_COLORS, LIGAND_COLORS, MODRES_COLORS, WATER_COLOR } from './colors';
-import { AssemblyRecord, DomainRecord, EntityRecord, ResidueRecord } from './data-provider';
-import { ChainInfo, ChainInstancesInfo } from './structure-info';
+import type { AssemblyRecord, DomainRecord, EntityRecord, ResidueRecord } from './data-provider';
+import type { ChainInfo, ChainInstancesInfo } from './structure-info';
 
 
 export type EntityType = 'polymer' | 'branched' | 'ligand' | 'ion' | 'water';
@@ -256,7 +253,6 @@ export function decideEntityType(entityInfo: EntityRecord): EntityType {
     }
     if (entityInfo.type === 'bound') {
         if (entityInfo.compIds.length === 1 && SaccharideNames.has(entityInfo.compIds[0])) {
-            // TODO should we treat lipids in a special way? src/mol-model/structure/model/types/lipids.ts
             return 'branched';
         } else if (entityInfo.compIds.length === 1 && IonNames.has(entityInfo.compIds[0])) {
             return 'ion';
@@ -264,7 +260,7 @@ export function decideEntityType(entityInfo: EntityRecord): EntityType {
             return 'ligand';
         }
     }
-    if (entityInfo.type === 'carbohydrate polymer') { // TODO check what values `type` can have
+    if (entityInfo.type === 'carbohydrate polymer') {
         return 'branched';
     }
     return 'polymer';

@@ -1,12 +1,12 @@
 import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
-import { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
+import type { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
-import { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
+import type { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { ANNOTATION_COLORS, ATOM_INTERACTION_COLORS, CHAIN_ANNOTATED_COLOR, MODRES_COLORS, RESIDUE_ANNOTATED_COLOR, RESIDUE_HIGHLIGHT_COLOR, VALIDATION_COLORS } from './colors';
-import { IDataProvider } from './data-provider';
+import type { IDataProvider } from './data-provider';
 import { applyElementColors, applyEntityColors, applyStandardComponents, applyStandardComponentsForChains, applyStandardComponentsForEntity, applyStandardRepresentations, atomicRepresentations, decideEntityType, entityIsLigand, getDomainColors, getDomainFamilyColors, getEntityColors, getModresColors, getPreferredAssembly, max, normalizeInsertionCode, smartFadedOpacity, StandardRepresentationType, unique } from './helpers';
-import { IModelProvider } from './model-provider';
-import { MODEL, PREFERRED, SnapshotSpec, SnapshotSpecParams } from './mvs-snapshot-types';
+import type { IModelProvider } from './model-provider';
+import { MODEL, PREFERRED, type SnapshotSpec, type SnapshotSpecParams } from './mvs-snapshot-types';
 import { chainSurroundings, getChainInfo, getChainInstancesInAssemblies, structurePolymerResidueCount } from './structure-info';
 
 
@@ -442,7 +442,7 @@ export class MVSSnapshotProvider {
             : params.assemblyId;
 
         if (displayedAssembly !== MODEL && params.ensureEntity !== undefined) {
-            const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it
+            const entities = await this.dataProvider.entities(params.entry);
             const entityChains = entities[params.ensureEntity].chains;
             const modelData = await this.modelProvider.getModel(params.entry);
             const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
@@ -517,7 +517,7 @@ export class MVSSnapshotProvider {
         //     repr.color({ color: 'gray' }).opacity({ opacity:bgOpacity });
         // }
 
-        const entities = await this.dataProvider.entities(params.entry); // TODO retrieve from model if we already have it?
+        const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
         const entityInstanceSelector: ComponentExpressionT = { label_entity_id: params.entityId, label_asym_id: params.labelAsymId, instance_id: params.instanceId };
 
@@ -661,8 +661,7 @@ export class MVSSnapshotProvider {
         const { displayedAssembly } = base.metadata;
 
         if (base.components.nonstandard) {
-            const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-            const modresColors = getModresColors(modifiedResidues);
+            const modresColors = getModresColors(base.metadata.modifiedResidues);
             const modresSpacefill = base.components.nonstandard.representation({ type: 'spacefill' });
             for (const compId in modresColors) {
                 modresSpacefill.color({ selector: { label_comp_id: compId }, color: modresColors[compId] });
@@ -679,8 +678,7 @@ export class MVSSnapshotProvider {
         const { displayedAssembly } = base.metadata;
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
-        const modifiedResidues = await this.dataProvider.modifiedResidues(params.entry);
-        const modresColors = getModresColors(modifiedResidues);
+        const modresColors = getModresColors(base.metadata.modifiedResidues);
         for (const [reprName, repr] of Object.entries(base.representations)) {
             if (reprName as StandardRepresentationType === 'nonstandardSticks') {
                 for (const compId in modresColors) {

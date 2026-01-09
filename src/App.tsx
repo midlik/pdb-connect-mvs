@@ -7,8 +7,8 @@ import './App.css';
 import { ApiDataProvider } from './snapshot-provider/data-provider';
 import { MolstarModelProvider } from './snapshot-provider/model-provider';
 import { MVSSnapshotListProvider } from './snapshot-provider/mvs-snapshot-list-provider';
-import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, MVSSnapshotProviderConfig } from './snapshot-provider/mvs-snapshot-provider';
-import { SnapshotSpec } from './snapshot-provider/mvs-snapshot-types';
+import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, type MVSSnapshotProviderConfig } from './snapshot-provider/mvs-snapshot-provider';
+import { type SnapshotSpec } from './snapshot-provider/mvs-snapshot-types';
 
 
 type Molstar = typeof import('molstar/lib/apps/viewer');
@@ -79,7 +79,7 @@ class AppModel {
         this.isBusy.next(true);
         try {
             let snapshot: MVSData = await this.snapshotProvider.getSnapshot(snapshotSpec);
-            snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly
+            snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly (PR#1733)
             // const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
             // console.log('mvsj', mvsj.length, mvsj)
             console.log(Molstar.PluginExtensions.mvs.MVSData.toPrettyString(snapshot))

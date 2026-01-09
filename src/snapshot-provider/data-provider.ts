@@ -1,6 +1,3 @@
-import { ColorT } from "molstar/lib/extensions/mvs/tree/mvs/param-types";
-import { normalizeInsertionCode } from "./helpers";
-
 export interface IDataProvider {
     assemblies(entryId: string): Promise<AssemblyRecord[]>,
     entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }>,
@@ -208,7 +205,7 @@ export class ApiDataProvider implements IDataProvider {
             for (const residue of provider.residueList) {
                 for (const annot of residue.additionalData) {
                     const entityId = annot.entityId
-                    const labelAsymId = annot.pdbChain; // This is `label_asym_id`, comes from Validation XML field `said`, confirmed with Melanie
+                    const labelAsymId = annot.pdbChain;
                     const labelSeqId = annot.pdbResidue;
                     const residueAnnotations = ((out[entityId] ??= {})[labelAsymId] ??= {})[labelSeqId] ??= [];
                     residueAnnotations.push(annot);
@@ -396,7 +393,7 @@ export interface LlmAnnotationItem {
     pdbResidue: number,
     /** auth_seq_id */
     authorResidueNumber: number,
-    /** TODO ask if label or auth */
+    /** label_asym_id (comes from Validation XML field `said`, confirmed with Melanie) */
     pdbChain: string,
     uniprotAccession: string,
     uniprotResidue: number,

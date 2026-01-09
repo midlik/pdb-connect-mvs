@@ -4,9 +4,9 @@
  * @author Adam Midlik <midlik@gmail.com>
  */
 
-import { ColorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
+import { type ColorT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
 import { Mat3, Vec3 } from 'molstar/lib/mol-math/linear-algebra';
-import { Color, ColorListEntry } from 'molstar/lib/mol-util/color/color';
+import { Color, type ColorListEntry } from 'molstar/lib/mol-util/color/color';
 import { ColorLists } from 'molstar/lib/mol-util/color/lists';
 import { Hcl } from 'molstar/lib/mol-util/color/spaces/hcl';
 

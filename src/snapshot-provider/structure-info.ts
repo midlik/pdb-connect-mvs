@@ -1,7 +1,7 @@
 /** Function for extracting useful info from structure/model data. */
 
 import { ModelSymmetry } from 'molstar/lib/mol-model-formats/structure/property/symmetry';
-import { Model, ResidueIndex } from 'molstar/lib/mol-model/structure';
+import type { Model, ResidueIndex } from 'molstar/lib/mol-model/structure';
 import { unique } from './helpers';
 
 
