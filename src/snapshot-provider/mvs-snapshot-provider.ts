@@ -436,29 +436,16 @@ export class MVSSnapshotProvider {
         }
     }
 
-    private async _loadPdbconnectBase(ctx: BuilderContext, params: { entry: string, assemblyId: string, ensureEntity?: string, ensureChain?: string }) {
+    private async _loadPdbconnectBase(ctx: BuilderContext, params: { entry: string, assemblyId: string, ensureChain?: string }) {
         let displayedAssembly = params.assemblyId === PREFERRED ?
             getPreferredAssembly(await this.dataProvider.assemblies(params.entry)).assemblyId
             : params.assemblyId;
 
-        if (displayedAssembly !== MODEL && params.ensureEntity !== undefined) {
-            const entities = await this.dataProvider.entities(params.entry);
-            const entityChains = entities[params.ensureEntity].chains;
-            const modelData = await this.modelProvider.getModel(params.entry);
-            const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-            // Find out if the assembly contains this entity and potentially fall back to deposited model)
-            const entityPresent = entityChains.some(chain => chainInstancesInfo[displayedAssembly].operatorsPerChain[chain]?.length > 0);
-            if (!entityPresent) {
-                displayedAssembly = MODEL;
-            }
-        }
-
         if (displayedAssembly !== MODEL && params.ensureChain !== undefined) {
-            const modelData = await this.modelProvider.getModel(params.entry);
-            const chainInstancesInfo = getChainInstancesInAssemblies(modelData);
-            // Find out if the assembly contains this chain entity and potentially fall back to deposited model)
-            const chainsPresent = chainInstancesInfo[displayedAssembly].operatorsPerChain[params.ensureChain]?.length > 0;
-            if (!chainsPresent) {
+            const chainsInAssemblies = await this.dataProvider.chainsInAssemblies(params.entry);
+            // Find out if the assembly contains this chain entity and potentially fall back to deposited model
+            const chainPresent = chainsInAssemblies[params.ensureChain]?.assemblies.includes(displayedAssembly);
+            if (!chainPresent) {
                 displayedAssembly = MODEL;
             }
         }
@@ -508,7 +495,7 @@ export class MVSSnapshotProvider {
     }
 
     private async loadPdbconnectSummaryMacromolecule(ctx: BuilderContext, outDescription: string[], params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
-        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureEntity: params.entityId });
+        const base = await this._loadPdbconnectBase(ctx, { entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = base.metadata;
 
         // const modelData = await this.modelProvider.getModel(params.entry);
@@ -551,7 +538,7 @@ export class MVSSnapshotProvider {
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
         outDescription.push(`This is macromolecule ${params.entityId} **${entities[params.entityId].name}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
-            outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+            outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
     }
 
@@ -589,7 +576,7 @@ export class MVSSnapshotProvider {
         const assemblyText = displayedAssembly === MODEL ? 'the deposited model' : `complex (assembly) ${displayedAssembly}`;
         outDescription.push(`This is ligand entity ${params.entityId} **${entities[params.entityId].compIds[0]}** in chain ${params.labelAsymId} (label_asym_id) in ${assemblyText}.`);
         if (displayedAssembly === MODEL && params.assemblyId !== MODEL) {
-            outDescription.push(`*\u26A0 Entity ${params.entityId} is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
+            outDescription.push(`*\u26A0 Chain ${params.labelAsymId} (label_asym_id) is not present in the requested assembly (${params.assemblyId}), displaying the deposited model instead.*`);
         }
     }
 

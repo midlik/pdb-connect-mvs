@@ -64,7 +64,7 @@ export interface ChainInstancesInfo {
         allOperators: string[],
         /** instance_ids of symmetry operators applied to each individual chain (identified by label_asym_id) in the assembly. */
         operatorsPerChain: {
-            [labelChainId: string]: string[],
+            [labelAsymId: string]: string[],
         },
         /** label_asym_ids of chains to which each symmetry operator (identified by instance_id) is applied in the assembly. */
         chainsPerOperator: {

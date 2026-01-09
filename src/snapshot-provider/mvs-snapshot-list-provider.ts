@@ -104,9 +104,12 @@ export class MVSSnapshotListProvider {
                     const entity = entities[entityId];
                     if (entityIsMacromolecule(entity)) {
                         // Model-agnostic version:
-                        // out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (first instance)`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: undefined, instanceId: undefined } });
                         // for (const labelAsymId of entity.chains) {
-                        //     out.push({ kind: 'pdbconnect_summary_macromolecule', name: `Entity ${entityId} (label_asym_id ${labelAsymId})`, params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId } });
+                        //     out.push({
+                        //         kind: 'pdbconnect_summary_macromolecule',
+                        //         name: `Entity ${entityId} (label_asym_id ${labelAsymId})`,
+                        //         params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId, instanceId: undefined },
+                        //     });
                         // }
                         let instances = listEntityInstancesInAssembly(entity, chainInstancesInfo[preferredAssembly]);
                         if (instances.length === 0) instances = listEntityInstancesInModel(entity);

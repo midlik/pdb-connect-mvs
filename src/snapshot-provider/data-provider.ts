@@ -1,9 +1,12 @@
+import { unique } from "./helpers";
+
 export interface IDataProvider {
     assemblies(entryId: string): Promise<AssemblyRecord[]>,
     entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }>,
     ligands(pdbId: string): Promise<ResidueRecord[]>,
     modifiedResidues(pdbId: string): Promise<ResidueRecord[]>,
     entitiesInAssemblies(pdbId: string): Promise<{ [entityId: string]: { assemblies: string[] } }>,
+    chainsInAssemblies(pdbId: string): Promise<{ [labelAsymId: string]: { assemblies: string[] } }>,
     siftsMappings(pdbId: string): Promise<{ [source: string]: { [family: string]: DomainRecord[] } }>,
     siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }>,
     authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
@@ -113,17 +116,36 @@ export class ApiDataProvider implements IDataProvider {
 
     async entitiesInAssemblies(pdbId: string) {
         const url = `${this.apiBaseUrl}/pdb/entry/assembly/${pdbId}`;
-        const json = await this.get(url);
+        const json = await this.get(url) as AssemblyApiData;
         const out: Awaited<ReturnType<IDataProvider['entitiesInAssemblies']>> = {};
         for (const record of json[pdbId] ?? []) {
             for (const entity of record.entities ?? []) {
                 out[entity.entity_id] ??= { assemblies: [] };
                 out[entity.entity_id].assemblies.push(record.assembly_id);
             }
-            // out[record.assembly_id] = record.entities.map((e: any) => e.entity_id as string);
         }
         return out;
     }
+
+    async chainsInAssemblies(pdbId: string) {
+        const url = `${this.apiBaseUrl}/pdb/entry/assembly/${pdbId}`;
+        const json = await this.get(url) as AssemblyApiData;
+        const out: Awaited<ReturnType<IDataProvider['chainsInAssemblies']>> = {};
+        for (const record of json[pdbId] ?? []) {
+            for (const entity of record.entities ?? []) {
+                for (const chain of entity.in_chains) {
+                    const [labelAsymId, instanceSuffix] = chain.split('-'); // assuming chains are named like "A", "B-2", ...
+                    out[labelAsymId] ??= { assemblies: [] };
+                    out[labelAsymId].assemblies.push(record.assembly_id);
+                }
+            }
+        }
+        for (const labelAsymId in out) {
+            out[labelAsymId].assemblies = unique(out[labelAsymId].assemblies);
+        }
+        return out;
+    }
+
     /** Get list of instances of SIFTS domains within a PDB entry,
      * sorted by source (CATH, Pfam, Rfam, SCOP) and family (e.g. 1.10.630.10, PF00067). */
     async siftsMappings(pdbId: string) {
@@ -350,6 +372,26 @@ interface DomainChunkRecord {
     /** No idea what this was supposed to mean in the original process (probably segment number
      * from the API before cutting into smaller segments by removing missing residues) */
     segment: number,
+}
+
+export interface AssemblyApiData {
+    [pdbId: string]: {
+        entities: {
+            entity_id: number,
+            /** label_asym_ids with instanceID suffixes (except for the first instance), e.g. ["A", "B-2"] */
+            in_chains: string[],
+            /** e.g. "carbohydrate polymer" */
+            molecule_type: string,
+            number_of_copies: number,
+            molecule_name: string[],
+        }[],
+        assembly_id: string,
+        assembly_composition: string,
+        molecular_weight: number,
+        polymeric_count: number,
+        /** e.g. "software_defined_assembly", "author_and_software_defined_assembly" */
+        details: string,
+    }[],
 }
 
 export interface InteractionsApiData {
