@@ -8,13 +8,15 @@ export type SnapshotSpecParams = {
     modres: { entry: string, compId: string },
     bfactor: { entry: string },
     validation: { entry: string, validation_type: ValidationType },
-    pdbconnect_summary_default: {
+    /** PDBconnect Summary tab > Preferred complex (default view), Complexes tab */
+    pdbconnect_complex: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly) */
         assemblyId: string,
     },
-    pdbconnect_summary_macromolecule: {
+    /** PDBconnect Summary tab > Macromolecules (macromolecule selected), Macromolecules tab */
+    pdbconnect_macromolecule: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
@@ -26,13 +28,15 @@ export type SnapshotSpecParams = {
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId: string | undefined,
     },
-    pdbconnect_summary_all_ligands: {
+    /** PDBconnect Summary tab > Ligands (nothing selected) */
+    pdbconnect_all_ligands: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
         assemblyId: string,
     },
-    pdbconnect_summary_ligand: {
+    /** PDBconnect Summary tab > Ligands (ligand selected) */
+    pdbconnect_ligand: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
@@ -44,13 +48,15 @@ export type SnapshotSpecParams = {
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId: string | undefined,
     },
-    pdbconnect_summary_domains_default: {
+    /** PDBconnect Summary tab > Domains > All (nothing selected) */
+    pdbconnect_domains_default: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
         assemblyId: string,
     },
-    pdbconnect_summary_domains_in_source: {
+    /** PDBconnect Summary tab > Domains > CATH/Pfam/SCOP (nothing selected) */
+    pdbconnect_domains_in_source: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
@@ -58,7 +64,8 @@ export type SnapshotSpecParams = {
         /** Source database (CATH | SCOP | Pfam) */
         source: string,
     },
-    pdbconnect_summary_domain: {
+    /** PDBconnect Summary tab > Domains (domain selected), Domains tab */
+    pdbconnect_domain: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
@@ -74,13 +81,15 @@ export type SnapshotSpecParams = {
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId: string | undefined,
     },
-    pdbconnect_summary_all_modifications: {
+    /** PDBconnect Summary tab > Modifications (nothing selected) */
+    pdbconnect_all_modifications: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
         assemblyId: string,
     }
-    pdbconnect_summary_modification: {
+    /** PDBconnect Summary tab > Modifications (modification selected) */
+    pdbconnect_modification: {
         /** PDB ID */
         entry: string,
         /** Assembly ID (or 'preferred' for preferred assembly, or 'model' for deposited model) */
@@ -94,6 +103,7 @@ export type SnapshotSpecParams = {
         /** Symmetry instance identifier (e.g. 'ASM-1'), `undefined` for showing all instances */
         instanceId: string | undefined,
     },
+    /** PDBconnect Model Quality tab */
     pdbconnect_quality: {
         /** PDB ID */
         entry: string,
@@ -102,6 +112,7 @@ export type SnapshotSpecParams = {
         /** Validation view type (either 'issue_count' for number of outlier types on a residue, or name of a specific outlier type) */
         validation_type: ValidationType,
     },
+    /** PDBconnect Ligands and Environments tab */
     pdbconnect_environment: {
         /** PDB ID */
         entry: string,
@@ -120,6 +131,7 @@ export type SnapshotSpecParams = {
         /** Source of atom interactions to be shown */
         atomInteractions: 'api' | 'builtin' | 'none',
     },
+    /** PDBconnect Text Annotations tab (residue selected) */
     pdbconnect_text_annotation: {
         /** PDB ID */
         entry: string,
@@ -139,15 +151,15 @@ export type SnapshotSpecParams = {
 export type SnapshotKind = keyof SnapshotSpecParams;
 export const SnapshotKinds = [
     'entry', 'assembly', 'entity', 'domain', 'ligand', 'modres', 'bfactor', 'validation',
-    'pdbconnect_summary_default',
-    'pdbconnect_summary_macromolecule',
-    'pdbconnect_summary_all_ligands',
-    'pdbconnect_summary_ligand',
-    'pdbconnect_summary_domains_default',
-    'pdbconnect_summary_domains_in_source',
-    'pdbconnect_summary_domain',
-    'pdbconnect_summary_all_modifications',
-    'pdbconnect_summary_modification',
+    'pdbconnect_complex',
+    'pdbconnect_macromolecule',
+    'pdbconnect_all_ligands',
+    'pdbconnect_ligand',
+    'pdbconnect_domains_default',
+    'pdbconnect_domains_in_source',
+    'pdbconnect_domain',
+    'pdbconnect_all_modifications',
+    'pdbconnect_modification',
     'pdbconnect_quality',
     'pdbconnect_environment',
     'pdbconnect_text_annotation',

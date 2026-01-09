@@ -47,10 +47,6 @@ export const INTERACTION_NICE_NAMES: Record<string, string> = {
     weak_hbond: 'Weak hydrogen bond',
 };
 
-interface BuilderContext {
-    root: Builder.Root,
-    model: Builder.Parse,
-}
 
 export class MVSSnapshotProvider {
     constructor(
@@ -79,15 +75,15 @@ export class MVSSnapshotProvider {
             case 'modres': return await this.loadModres(spec.params);
             case 'bfactor': return await this.loadBfactor(spec.params);
             case 'validation': return await this.loadValidation(spec.params);
-            case 'pdbconnect_summary_default': return await this.loadPdbconnectSummaryDefault(spec.params);
-            case 'pdbconnect_summary_macromolecule': return await this.loadPdbconnectSummaryMacromolecule(spec.params);
-            case 'pdbconnect_summary_all_ligands': return await this.loadPdbconnectSummaryAllLigands(spec.params);
-            case 'pdbconnect_summary_ligand': return await this.loadPdbconnectSummaryLigand(spec.params);
-            case 'pdbconnect_summary_domains_default': return await this.loadPdbconnectSummaryDomainsDefault(spec.params);
-            case 'pdbconnect_summary_domains_in_source': return await this.loadPdbconnectSummaryDomainsInSource(spec.params);
-            case 'pdbconnect_summary_domain': return await this.loadPdbconnectSummaryDomain(spec.params);
-            case 'pdbconnect_summary_all_modifications': return await this.loadPdbconnectSummaryAllModifications(spec.params);
-            case 'pdbconnect_summary_modification': return await this.loadPdbconnectSummaryModification(spec.params);
+            case 'pdbconnect_complex': return await this.loadPdbconnectComplex(spec.params);
+            case 'pdbconnect_macromolecule': return await this.loadPdbconnectMacromolecule(spec.params);
+            case 'pdbconnect_all_ligands': return await this.loadPdbconnectAllLigands(spec.params);
+            case 'pdbconnect_ligand': return await this.loadPdbconnectLigand(spec.params);
+            case 'pdbconnect_domains_default': return await this.loadPdbconnectDomainsDefault(spec.params);
+            case 'pdbconnect_domains_in_source': return await this.loadPdbconnectDomainsInSource(spec.params);
+            case 'pdbconnect_domain': return await this.loadPdbconnectDomain(spec.params);
+            case 'pdbconnect_all_modifications': return await this.loadPdbconnectAllModifications(spec.params);
+            case 'pdbconnect_modification': return await this.loadPdbconnectModification(spec.params);
             case 'pdbconnect_quality': return await this.loadPdbconnectQuality(spec.params);
             case 'pdbconnect_environment': return await this.loadPdbconnectEnvironment(spec.params);
             case 'pdbconnect_text_annotation': return await this.loadPdbconnectTextAnnotation(spec.params);
@@ -100,7 +96,7 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private _loadModel(params: { entry: string }): BuilderContext {
+    private _loadModel(params: { entry: string }) {
         const base = this._loadRoot();
         const model = base.root
             .download({ url: this.config.PdbStructureUrlTemplate.replaceAll('{pdb}', params.entry) })
@@ -111,6 +107,7 @@ export class MVSSnapshotProvider {
         };
     }
 
+    /** Create MVS view for PDBImages Entry image */
     private async loadEntry(params: SnapshotSpecParams['entry']) {
         const ctx = this._loadModel(params);
         const struct = ctx.model.modelStructure();
@@ -131,6 +128,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Assembly image */
     private async loadAssembly(params: SnapshotSpecParams['assembly']) {
         const ctx = this._loadModel(params);
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
@@ -155,6 +153,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Entity image */
     private async loadEntity(params: SnapshotSpecParams['entity']) {
         const ctx = this._loadModel(params);
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
@@ -210,6 +209,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Domain image */
     private async loadDomain(params: SnapshotSpecParams['domain']) {
         const ctx = this._loadModel(params);
         const struct = ctx.model.modelStructure();
@@ -254,6 +254,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Ligand image */
     private async loadLigand(params: SnapshotSpecParams['ligand']) {
         const ctx = this._loadModel(params);
         const entities = await this.dataProvider.entities(params.entry);
@@ -307,6 +308,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Modres image */
     private async loadModres(params: SnapshotSpecParams['modres']) {
         const ctx = this._loadModel(params);
         const assembliesInfo = await this.dataProvider.assemblies(params.entry);
@@ -345,6 +347,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Bfactor image */
     private async loadBfactor(params: SnapshotSpecParams['bfactor']) {
         const ctx = this._loadModel(params);
         const struct = ctx.model.modelStructure();
@@ -375,6 +378,7 @@ export class MVSSnapshotProvider {
         return { ...ctx, description };
     }
 
+    /** Create MVS view for PDBImages Validation image */
     private async loadValidation(params: SnapshotSpecParams['validation']) {
         const ctx = this._loadModel(params);
         const struct = ctx.model.modelStructure();
@@ -432,6 +436,8 @@ export class MVSSnapshotProvider {
         }
         return { ...ctx, description };
     }
+
+    /** Create base for all PDBconnect views */
     private async _loadPdbconnectBase(params: { entry: string, assemblyId: string, ensureChain?: string }) {
         const ctx = this._loadModel(params);
 
@@ -464,7 +470,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryDefault(params: SnapshotSpecParams['pdbconnect_summary_default'] & { ensureEntity?: string, ensureChain?: string }) {
+    /** Create MVS view for PDBconnect Summary tab > Preferred complex (default view), Complexes tab */
+    private async loadPdbconnectComplex(params: SnapshotSpecParams['pdbconnect_complex'] & { ensureChain?: string }) {
         const ctx = await this._loadPdbconnectBase(params);
         const entities = await this.dataProvider.entities(params.entry);
         const entityColors = getEntityColors(entities);
@@ -494,7 +501,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryMacromolecule(params: SnapshotSpecParams['pdbconnect_summary_macromolecule']) {
+    /** Create MVS view for PDBconnect Summary tab > Macromolecules (macromolecule selected), Macromolecules tab */
+    private async loadPdbconnectMacromolecule(params: SnapshotSpecParams['pdbconnect_macromolecule']) {
         const ctx = await this._loadPdbconnectBase({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = ctx.metadata;
 
@@ -547,7 +555,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryAllLigands(params: SnapshotSpecParams['pdbconnect_summary_all_ligands']) {
+    /** Create MVS view for PDBconnect Summary tab > Ligands (nothing selected) */
+    private async loadPdbconnectAllLigands(params: SnapshotSpecParams['pdbconnect_all_ligands']) {
         const ctx = await this._loadPdbconnectBase({ entry: params.entry, assemblyId: params.assemblyId });
         const { displayedAssembly } = ctx.metadata;
 
@@ -574,8 +583,9 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryLigand(params: SnapshotSpecParams['pdbconnect_summary_ligand']) {
-        const ctx = await this.loadPdbconnectSummaryDefault({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+    /** Create MVS view for PDBconnect Summary tab > Ligands (ligand selected) */
+    private async loadPdbconnectLigand(params: SnapshotSpecParams['pdbconnect_ligand']) {
+        const ctx = await this.loadPdbconnectComplex({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly, entities } = ctx.metadata;
 
         ctx.structure
@@ -595,7 +605,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryDomainsDefault(params: SnapshotSpecParams['pdbconnect_summary_domains_default']) {
+    /** Create MVS view for PDBconnect Summary tab > Domains > All (nothing selected) */
+    private async loadPdbconnectDomainsDefault(params: SnapshotSpecParams['pdbconnect_domains_default']) {
         const ctx = await this._loadPdbconnectBase(params);
         const { displayedAssembly } = ctx.metadata;
         const description: string[] = [];
@@ -608,7 +619,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryDomainsInSource(params: SnapshotSpecParams['pdbconnect_summary_domains_in_source']) {
+    /** Create MVS view for PDBconnect Summary tab > Domains > CATH/Pfam/SCOP (nothing selected) */
+    private async loadPdbconnectDomainsInSource(params: SnapshotSpecParams['pdbconnect_domains_in_source']) {
         const ctx = await this._loadPdbconnectBase(params);
         const { displayedAssembly } = ctx.metadata;
 
@@ -641,7 +653,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryDomain(params: SnapshotSpecParams['pdbconnect_summary_domain']) {
+    /** Create MVS view for PDBconnect Summary tab > Domains (domain selected), Domains tab */
+    private async loadPdbconnectDomain(params: SnapshotSpecParams['pdbconnect_domain']) {
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
         const domainFamilyColors = getDomainFamilyColors(domainInfo);
         const domain = domainInfo[params.source][params.familyId][params.entityId].find(dom => dom.id === params.domainId);
@@ -673,7 +686,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryAllModifications(params: SnapshotSpecParams['pdbconnect_summary_all_modifications']) {
+    /** Create MVS view for PDBconnect Summary tab > Modifications (nothing selected) */
+    private async loadPdbconnectAllModifications(params: SnapshotSpecParams['pdbconnect_all_modifications']) {
         const ctx = await this._loadPdbconnectBase({ entry: params.entry, assemblyId: params.assemblyId });
         const { displayedAssembly } = ctx.metadata;
 
@@ -695,7 +709,8 @@ export class MVSSnapshotProvider {
         };
     }
 
-    private async loadPdbconnectSummaryModification(params: SnapshotSpecParams['pdbconnect_summary_modification']) {
+    /** Create MVS view for PDBconnect Summary tab > Modifications (modification selected) */
+    private async loadPdbconnectModification(params: SnapshotSpecParams['pdbconnect_modification']) {
         const ctx = await this._loadPdbconnectBase({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = ctx.metadata;
         const entities = await this.dataProvider.entities(params.entry);
@@ -730,6 +745,7 @@ export class MVSSnapshotProvider {
         };
     }
 
+    /** Create MVS view for PDBconnect Model Quality tab */
     private async loadPdbconnectQuality(params: SnapshotSpecParams['pdbconnect_quality']) {
         const ctx = await this._loadPdbconnectBase({ entry: params.entry, assemblyId: params.assemblyId });
         const { displayedAssembly } = ctx.metadata;
@@ -788,8 +804,9 @@ export class MVSSnapshotProvider {
         };
     }
 
+    /** Create MVS view for PDBconnect Ligands and Environments tab */
     private async loadPdbconnectEnvironment(params: SnapshotSpecParams['pdbconnect_environment']) {
-        const ctx = await this.loadPdbconnectSummaryDefault({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
+        const ctx = await this.loadPdbconnectComplex({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly, entityColors } = ctx.metadata;
 
         ctx.structure
@@ -867,6 +884,7 @@ export class MVSSnapshotProvider {
         };
     }
 
+    /** Create MVS view for PDBconnect Text Annotations tab (residue selected) */
     private async loadPdbconnectTextAnnotation(params: SnapshotSpecParams['pdbconnect_text_annotation']) {
         const ctx = await this._loadPdbconnectBase({ entry: params.entry, assemblyId: params.assemblyId, ensureChain: params.labelAsymId });
         const { displayedAssembly } = ctx.metadata;

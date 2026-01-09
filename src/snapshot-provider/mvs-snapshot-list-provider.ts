@@ -83,18 +83,19 @@ export class MVSSnapshotListProvider {
                 }
                 break;
             }
-            case 'pdbconnect_summary_default': {
+            case 'pdbconnect_complex': {
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 const preferred = assemblies.find(ass => ass.preferred);
                 if (preferred) {
-                    out.push({ kind: 'pdbconnect_summary_default', name: `Preferred complex`, params: { entry: entryId, assemblyId: PREFERRED } });
+                    out.push({ kind: 'pdbconnect_complex', name: `Preferred complex`, params: { entry: entryId, assemblyId: PREFERRED } });
                 }
                 for (const ass of assemblies) {
-                    out.push({ kind: 'pdbconnect_summary_default', name: `Complex ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
+                    out.push({ kind: 'pdbconnect_complex', name: `Complex ${ass.assemblyId}`, params: { entry: entryId, assemblyId: ass.assemblyId } });
                 }
+                out.push({ kind: 'pdbconnect_complex', name: `Deposited model`, params: { entry: entryId, assemblyId: MODEL } });
                 break;
             }
-            case 'pdbconnect_summary_macromolecule': {
+            case 'pdbconnect_macromolecule': {
                 const entities = await this.dataProvider.entities(entryId);
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
@@ -106,7 +107,7 @@ export class MVSSnapshotListProvider {
                         // Model-agnostic version:
                         // for (const labelAsymId of entity.chains) {
                         //     out.push({
-                        //         kind: 'pdbconnect_summary_macromolecule',
+                        //         kind: 'pdbconnect_macromolecule',
                         //         name: `Entity ${entityId} (label_asym_id ${labelAsymId})`,
                         //         params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: labelAsymId, instanceId: undefined },
                         //     });
@@ -115,7 +116,7 @@ export class MVSSnapshotListProvider {
                         if (instances.length === 0) instances = listEntityInstancesInModel(entity);
                         for (const instance of instances) {
                             out.push({
-                                kind: 'pdbconnect_summary_macromolecule',
+                                kind: 'pdbconnect_macromolecule',
                                 name: `Entity ${entityId} (label_asym_id ${instance.labelAsymId}, ${instance.instanceId ? `instance_id ${instance.instanceId}` : 'model'})`,
                                 params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: instance.labelAsymId, instanceId: instance.instanceId }
                             });
@@ -124,11 +125,11 @@ export class MVSSnapshotListProvider {
                 }
                 break;
             }
-            case 'pdbconnect_summary_all_ligands': {
-                out.push({ kind: 'pdbconnect_summary_all_ligands', name: `All ligands`, params: { entry: entryId, assemblyId: PREFERRED } });
+            case 'pdbconnect_all_ligands': {
+                out.push({ kind: 'pdbconnect_all_ligands', name: `All ligands`, params: { entry: entryId, assemblyId: PREFERRED } });
                 break;
             }
-            case 'pdbconnect_summary_ligand': {
+            case 'pdbconnect_ligand': {
                 const entities = await this.dataProvider.entities(entryId);
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
@@ -142,7 +143,7 @@ export class MVSSnapshotListProvider {
                         if (instances.length === 0) instances = listEntityInstancesInModel(entity);
                         for (const instance of instances) {
                             out.push({
-                                kind: 'pdbconnect_summary_ligand',
+                                kind: 'pdbconnect_ligand',
                                 name: `Ligand entity ${entityId} (${compId}, label_asym_id ${instance.labelAsymId}, ${instance.instanceId ? `instance_id ${instance.instanceId}` : 'model'})`,
                                 params: { entry: entryId, assemblyId: PREFERRED, entityId: entityId, labelAsymId: instance.labelAsymId, instanceId: instance.instanceId }
                             });
@@ -151,18 +152,18 @@ export class MVSSnapshotListProvider {
                 }
                 break;
             }
-            case 'pdbconnect_summary_domains_default': {
-                out.push({ kind: 'pdbconnect_summary_domains_default', name: `All domains`, params: { entry: entryId, assemblyId: PREFERRED } });
+            case 'pdbconnect_domains_default': {
+                out.push({ kind: 'pdbconnect_domains_default', name: `All domains`, params: { entry: entryId, assemblyId: PREFERRED } });
                 break;
             }
-            case 'pdbconnect_summary_domains_in_source': {
+            case 'pdbconnect_domains_in_source': {
                 const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
                 for (const source in domains) {
-                    out.push({ kind: 'pdbconnect_summary_domains_in_source', name: `Domains in ${source}`, params: { entry: entryId, assemblyId: PREFERRED, source: source } });
+                    out.push({ kind: 'pdbconnect_domains_in_source', name: `Domains in ${source}`, params: { entry: entryId, assemblyId: PREFERRED, source: source } });
                 }
                 break;
             }
-            case 'pdbconnect_summary_domain': {
+            case 'pdbconnect_domain': {
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
                 const domains = await this.dataProvider.siftsMappingsByEntity(entryId);
@@ -180,7 +181,7 @@ export class MVSSnapshotListProvider {
                                 if (instances === undefined || instances.length === 0) instances = [undefined];
                                 for (const instanceId of instances) {
                                     out.push({
-                                        kind: 'pdbconnect_summary_domain',
+                                        kind: 'pdbconnect_domain',
                                         name: `Domain from ${source} ${familyId} ${domain.id} (label_asym_id ${labelAsymId},  ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
                                         params: { entry: entryId, assemblyId: PREFERRED, source, familyId, entityId, domainId: domain.id, instanceId },
                                     });
@@ -191,11 +192,11 @@ export class MVSSnapshotListProvider {
                 }
                 break;
             }
-            case 'pdbconnect_summary_all_modifications': {
-                out.push({ kind: 'pdbconnect_summary_all_modifications', name: `All modified residues`, params: { entry: entryId, assemblyId: PREFERRED } });
+            case 'pdbconnect_all_modifications': {
+                out.push({ kind: 'pdbconnect_all_modifications', name: `All modified residues`, params: { entry: entryId, assemblyId: PREFERRED } });
                 break;
             }
-            case 'pdbconnect_summary_modification': {
+            case 'pdbconnect_modification': {
                 const modifiedResidues = await this.dataProvider.modifiedResidues(entryId);
                 const assemblies = await this.dataProvider.assemblies(entryId);
                 const preferredAssembly = getPreferredAssembly(assemblies).assemblyId;
@@ -207,7 +208,7 @@ export class MVSSnapshotListProvider {
                     if (instances === undefined || instances.length === 0) instances = [undefined];
                     for (const instanceId of instances) {
                         out.push({
-                            kind: 'pdbconnect_summary_modification',
+                            kind: 'pdbconnect_modification',
                             name: `Modified residue ${modres.compoundId} (label_asym_id ${modres.labelAsymId} ${modres.labelSeqId},  ${instanceId ? `instance_id ${instanceId}` : 'model'})`,
                             params: { entry: entryId, assemblyId: PREFERRED, compId: modres.compoundId, labelAsymId: modres.labelAsymId, labelSeqId: modres.labelSeqId, instanceId },
                         });
