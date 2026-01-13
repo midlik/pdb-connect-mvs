@@ -1,5 +1,4 @@
 export type SnapshotSpecParams = {
-    // TODO think about how to deal with mandatory (hopefully exhaustible) params vs optional params
     entry: { entry: string },
     assembly: { entry: string, assemblyId: string },
     entity: { entry: string, entityId: string, assemblyId?: string },

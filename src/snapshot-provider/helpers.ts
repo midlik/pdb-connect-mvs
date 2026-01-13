@@ -28,7 +28,7 @@ export const StardardComponents: { [type in StandardComponentType]?: (struct: Bu
     branched(structure: Builder.Structure) {
         return structure.component({ selector: 'branched', ref: 'component_branched' });
     },
-    branchedLinkage: undefined, // TODO select sugar linkage somehow if we want it (const sugarLinkageSticks = await this.nodes.branchedLinkage?.makeBallsAndSticks(options, ['branchedLinkageSticks']);)
+    branchedLinkage: undefined,
     ligand(structure: Builder.Structure) {
         return structure.component({ selector: 'ligand', ref: 'component_ligand' });
     },
@@ -61,7 +61,7 @@ export const StandardRepresentations: { [type in StandardComponentType]?: (comp:
     },
     branched(component: Builder.Component, options: StandardRepresentationsOptions) {
         return {
-            branchedCarbohydrate: applyOpacity(component.representation({ type: 'carbohydrate', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'branchedCarbohydrate') }), options.opacityFactor), // TODO change size factor for SNFG to 1.75 in Molstar MVS extension
+            branchedCarbohydrate: applyOpacity(component.representation({ type: 'carbohydrate', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'branchedCarbohydrate') }), options.opacityFactor),
             branchedSticks: applyOpacity(component.representation({ type: 'ball_and_stick', size_factor: options.sizeFactor, custom: options.custom, ref: makeRef(options.refPrefix, 'branchedSticks') }), 0.3 * (options.opacityFactor ?? 1)),
         };
     },

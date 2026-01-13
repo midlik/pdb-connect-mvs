@@ -519,7 +519,7 @@ export class MVSSnapshotProvider {
         for (const repr of Object.values(ctx.representations)) {
             repr.color({ selector: entityInstanceSelector, color: entityColors[params.entityId] });
         }
-        // TODO Molstar: coloring by element within selection (entity)
+        // TODO use coloring by element within selection (entity) (once Molstar >=5.5.1 available)
         // for (const repr of atomicRepresentations(base.representations)) {
         //     applyElementColors(repr);
         // }
@@ -540,7 +540,6 @@ export class MVSSnapshotProvider {
         // base.root.animation({})
         //     .interpolate(makeEmissivePulse('highlighted_polymerCartoon'))
         //     .interpolate(makeEmissivePulse('highlighted_nonstandardSticks'));
-        // TODO Molstar: fix focusing on polymer + nonstandard (empty) in 1hda
 
         const description: string[] = [];
         description.push(`## Macromolecule ${params.entityId}`);
@@ -949,9 +948,9 @@ function makeEmissivePulse(representationRef: string, strength: number = 0.33): 
     return {
         kind: 'scalar' as const,
         target_ref: representationRef,
-        start_ms: 250, // TODO ensure this happen in the middle of camera transition
+        start_ms: 250,
         duration_ms: 600,
-        frequency: 2, // TODO ask people if they like single of double blink
+        frequency: 2,
         alternate_direction: true,
         property: ['custom', 'molstar_representation_params', 'emissive'],
         start: 0,

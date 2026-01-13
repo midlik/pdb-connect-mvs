@@ -79,7 +79,7 @@ class AppModel {
         this.isBusy.next(true);
         try {
             let snapshot: MVSData = await this.snapshotProvider.getSnapshot(snapshotSpec);
-            snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly (PR#1733)
+            snapshot = Molstar.PluginExtensions.mvs.MVSData.fromMVSJ(Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot)); // TODO remove this once MVS validation in Molstar handles undefineds correctly (PR#1733) - Molstar >=5.5.1
             // const mvsj = Molstar.PluginExtensions.mvs.MVSData.toMVSJ(snapshot, 0)
             // console.log('mvsj', mvsj.length, mvsj)
             console.log(Molstar.PluginExtensions.mvs.MVSData.toPrettyString(snapshot))

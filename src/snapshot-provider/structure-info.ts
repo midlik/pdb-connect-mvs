@@ -193,8 +193,6 @@ export function chainSurroundings(model: Model, labelChainId: string, radius: nu
         out.push({ label_asym_id, label_seq_id, auth_seq_id, pdbx_PDB_ins_code });
     }
     return out;
-    // TODO think if we will need to run this on assemblies too (if so, it would just be easier to build structure and run query on it, StructureQueryHelper.run)
-    // (or use API)
 }
 
 /** Return chain index or -1 if chain not found. */
