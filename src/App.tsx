@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { BehaviorSubject } from 'rxjs';
 import './App.css';
-import { ApiDataProvider } from './snapshot-provider/data-provider';
+import { ApiDataProvider, PdbeApiClient } from './snapshot-provider/data-provider';
 import { MolstarModelProvider } from './snapshot-provider/model-provider';
 import { MVSSnapshotListProvider } from './snapshot-provider/mvs-snapshot-list-provider';
 import { DefaultMVSSnapshotProviderConfig, MVSSnapshotProvider, type MVSSnapshotProviderConfig } from './snapshot-provider/mvs-snapshot-provider';
@@ -189,7 +189,8 @@ function Description({ model }: { model: AppModel }) {
 /** Return a new MVSSnapshotProvider and MVSSnapshotListProvider taking data from PDBe API (https://www.ebi.ac.uk/pdbe/api/v2) */
 function getMVSSnapshotProviders(config?: Partial<MVSSnapshotProviderConfig>) {
     const fullConfig: MVSSnapshotProviderConfig = { ...DefaultMVSSnapshotProviderConfig, ...config };
-    const dataProvider = new ApiDataProvider(fullConfig.PdbApiUrlPrefix);
+    const pdbeApiClient = new PdbeApiClient(fullConfig.PdbApiUrlPrefix);
+    const dataProvider = new ApiDataProvider(pdbeApiClient);
     const modelProvider = new MolstarModelProvider();
     const snapshotProvider = new MVSSnapshotProvider(dataProvider, modelProvider, fullConfig);
     const snapshotListProvider = new MVSSnapshotListProvider(dataProvider, modelProvider);

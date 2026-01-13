@@ -625,7 +625,7 @@ export class MVSSnapshotProvider {
         const { displayedAssembly } = ctx.metadata;
 
         const domainInfo = await this.dataProvider.siftsMappingsByEntity(params.entry);
-        const domainFamilyColors = getDomainFamilyColors(domainInfo); // TODO cache? (incl. many things that need to be computed just once, e.g. getChainInfo)
+        const domainFamilyColors = getDomainFamilyColors(domainInfo); // TODO cache?
 
         const srcDomains = domainInfo[params.source];
         for (const familyId in srcDomains) {

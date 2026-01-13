@@ -1,23 +1,15 @@
-import { unique } from "./helpers";
+import { unique } from './helpers';
 
-export interface IDataProvider {
-    assemblies(entryId: string): Promise<AssemblyRecord[]>,
-    entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }>,
-    ligands(pdbId: string): Promise<ResidueRecord[]>,
-    modifiedResidues(pdbId: string): Promise<ResidueRecord[]>,
-    entitiesInAssemblies(pdbId: string): Promise<{ [entityId: string]: { assemblies: string[] } }>,
-    chainsInAssemblies(pdbId: string): Promise<{ [labelAsymId: string]: { assemblies: string[] } }>,
-    siftsMappings(pdbId: string): Promise<{ [source: string]: { [family: string]: DomainRecord[] } }>,
-    siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entity: string]: DomainRecord[] } } }>,
-    authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }>,
-    experimentalMethods(pdbId: string): Promise<string[]>,
-    pdbeStructureQualityReport(pdbId: string): Promise<PdbeStructureQualityReport | undefined>,
-    atomInteractions(pdbId: string, authAsymId: string, authSeqId: number): Promise<InteractionsApiData[string]>,
-    llmAnnotations(pdbId: string): Promise<LlmAnnotations>,
+
+export interface IPdbeApiClient {
+    /** Resolve to parsed JSON object obtained from API endpoint, or `undefined` if status code is 404.
+     * 
+     * E.g. `await get('pdb/entry/summary/1tqn')` -> `{ 1tqn: [...] }` (corresponds to https://www.ebi.ac.uk/pdbe/api/v2/pdb/entry/summary/1tqn) */
+    get<T>(relativeUrl: string): Promise<T | undefined>,
 }
 
 
-export class ApiDataProvider implements IDataProvider {
+export class PdbeApiClient implements IPdbeApiClient {
     private readonly apiBaseUrl: string;
 
     /** Cache for currently running or resolved promises */
@@ -27,23 +19,49 @@ export class ApiDataProvider implements IDataProvider {
         this.apiBaseUrl = apiBaseUrl.replace(/\/$/, ''); // trim final slash
     }
 
-    private async getWithoutCache(url: string): Promise<any> {
+    private async getWithoutCache<T>(relativeUrl: string): Promise<T | undefined> {
+        const url = `${this.apiBaseUrl}/${relativeUrl}`;
         console.log('GET', url);
         const response = await fetch(url);
-        if (response.status === 404) return {}; // PDBe API returns 404 in some cases (e.g. when there are no modified residues)
+        if (response.status === 404) return undefined; // PDBe API returns 404 in some cases (e.g. when there are no modified residues)
         if (!response.ok) throw new Error(`API call failed with code ${response.status} (${url})`);
         return await response.json();
     }
-    private get(url: string): Promise<any> {
-        return this.cache[url] ??= this.getWithoutCache(url);
+    get<T>(relativeUrl: string): Promise<T | undefined> {
+        return this.cache[relativeUrl] ??= this.getWithoutCache<T>(relativeUrl);
+    }
+}
+
+
+export interface IDataProvider {
+    assemblies(entryId: string): Promise<AssemblyRecord[]>,
+    entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }>,
+    ligands(pdbId: string): Promise<ResidueRecord[]>,
+    modifiedResidues(pdbId: string): Promise<ResidueRecord[]>,
+    entitiesInAssemblies(pdbId: string): Promise<{ [entityId: string]: { assemblies: string[] } }>,
+    chainsInAssemblies(pdbId: string): Promise<{ [labelAsymId: string]: { assemblies: string[] } }>,
+    siftsMappings(pdbId: string): Promise<{ [source: string]: { [family: string]: DomainRecord[] } }>,
+    siftsMappingsByEntity(pdbId: string): Promise<{ [source: string]: { [family: string]: { [entityId: string]: DomainRecord[] } } }>,
+    authChainCoverages(pdbId: string): Promise<{ [authAsymId: string]: number }>,
+    experimentalMethods(pdbId: string): Promise<string[]>,
+    pdbeStructureQualityReport(pdbId: string): Promise<ValidationApiData[string] | undefined>,
+    atomInteractions(pdbId: string, authAsymId: string, authSeqId: number): Promise<InteractionsApiData[string]>,
+    llmAnnotations(pdbId: string): Promise<LlmAnnotations>,
+}
+
+
+export class ApiDataProvider implements IDataProvider {
+    constructor(private readonly pdbeApiWrapper: IPdbeApiClient) { }
+
+    private get<T>(relativeUrl: string): Promise<T | undefined> {
+        return this.pdbeApiWrapper.get(relativeUrl);
     }
 
 
-    async assemblies(entryId: string): Promise<AssemblyRecord[]> {
-        const url = `${this.apiBaseUrl}/pdb/entry/summary/${entryId}`;
-        const json = await this.get(url);
+    async assemblies(pdbId: string): Promise<AssemblyRecord[]> {
+        const json = await this.get<SummaryApiData>(`pdb/entry/summary/${pdbId}`);
         const assemblies: AssemblyRecord[] = [];
-        for (const record of json[entryId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             for (const assembly of record.assemblies) {
                 assemblies.push({
                     assemblyId: assembly.assembly_id,
@@ -56,13 +74,11 @@ export class ApiDataProvider implements IDataProvider {
         return assemblies;
     }
 
-
     /** Get type and residue code (chem_comp_id, when it makes sense) of entities within a PDB entry. */
     async entities(pdbId: string): Promise<{ [entityId: string]: EntityRecord }> {
-        const url = `${this.apiBaseUrl}/pdb/entry/molecules/${pdbId}`;
-        const json = await this.get(url);
+        const json = await this.get<MoleculesApiData>(`pdb/entry/molecules/${pdbId}`);
         const result: { [entityId: string]: EntityRecord } = {};
-        for (const record of json[pdbId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             result[record.entity_id] = {
                 id: `${record.entity_id}`, // entity ID is string, even though the API may serve it as number
                 name: record.molecule_name.join(' / '), // concatenating in case of chimeras, e.g. 6hr1
@@ -76,10 +92,9 @@ export class ApiDataProvider implements IDataProvider {
 
     /** Get list of instances of ligands within a PDB entry. */
     async ligands(pdbId: string): Promise<ResidueRecord[]> {
-        const url = `${this.apiBaseUrl}/pdb/entry/ligand_monomers/${pdbId}`;
-        const json = await this.get(url);
+        const json = await this.get<LigandMonomersApiData>(`pdb/entry/ligand_monomers/${pdbId}`);
         const result: ResidueRecord[] = [];
-        for (const record of json[pdbId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             result.push({
                 entityId: `${record.entity_id}`, // API serves as number, we need string
                 labelAsymId: record.struct_asym_id,
@@ -96,10 +111,9 @@ export class ApiDataProvider implements IDataProvider {
 
     /** Get list of instances of modified residues within a PDB entry. */
     async modifiedResidues(pdbId: string): Promise<ResidueRecord[]> {
-        const url = `${this.apiBaseUrl}/pdb/entry/modified_AA_or_NA/${pdbId}`;
-        const json = await this.get(url);
+        const json = await this.get<ModifiedResiduesApiData>(`pdb/entry/modified_AA_or_NA/${pdbId}`);
         const result: ResidueRecord[] = [];
-        for (const record of json[pdbId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             result.push({
                 entityId: `${record.entity_id}`, // API serves as number, we need string
                 labelAsymId: record.struct_asym_id,
@@ -115,10 +129,9 @@ export class ApiDataProvider implements IDataProvider {
     }
 
     async entitiesInAssemblies(pdbId: string) {
-        const url = `${this.apiBaseUrl}/pdb/entry/assembly/${pdbId}`;
-        const json = await this.get(url) as AssemblyApiData;
+        const json = await this.get<AssemblyApiData>(`pdb/entry/assembly/${pdbId}`);
         const out: Awaited<ReturnType<IDataProvider['entitiesInAssemblies']>> = {};
-        for (const record of json[pdbId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             for (const entity of record.entities ?? []) {
                 out[entity.entity_id] ??= { assemblies: [] };
                 out[entity.entity_id].assemblies.push(record.assembly_id);
@@ -128,10 +141,9 @@ export class ApiDataProvider implements IDataProvider {
     }
 
     async chainsInAssemblies(pdbId: string) {
-        const url = `${this.apiBaseUrl}/pdb/entry/assembly/${pdbId}`;
-        const json = await this.get(url) as AssemblyApiData;
+        const json = await this.get<AssemblyApiData>(`pdb/entry/assembly/${pdbId}`);
         const out: Awaited<ReturnType<IDataProvider['chainsInAssemblies']>> = {};
-        for (const record of json[pdbId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             for (const entity of record.entities ?? []) {
                 for (const chain of entity.in_chains) {
                     const [labelAsymId, instanceSuffix] = chain.split('-'); // assuming chains are named like "A", "B-2", ...
@@ -149,10 +161,10 @@ export class ApiDataProvider implements IDataProvider {
     /** Get list of instances of SIFTS domains within a PDB entry,
      * sorted by source (CATH, Pfam, Rfam, SCOP) and family (e.g. 1.10.630.10, PF00067). */
     async siftsMappings(pdbId: string) {
-        const jsonProtein = await this.get(`${this.apiBaseUrl}/mappings/${pdbId}`);
-        const jsonNucleic = await this.get(`${this.apiBaseUrl}/nucleic_mappings/${pdbId}`);
-        const entryDataProtein = jsonProtein[pdbId] ?? {};
-        const entryDataNucleic = jsonNucleic[pdbId] ?? {};
+        const jsonProtein = await this.get<MappingsApiData>(`mappings/${pdbId}`);
+        const jsonNucleic = await this.get<MappingsApiData>(`nucleic_mappings/${pdbId}`);
+        const entryDataProtein = jsonProtein?.[pdbId] ?? {};
+        const entryDataNucleic = jsonNucleic?.[pdbId] ?? {};
         const entryData = { ...entryDataProtein, ...entryDataNucleic };
 
         const result = {} as { [source: string]: { [family: string]: DomainRecord[] } };
@@ -175,17 +187,15 @@ export class ApiDataProvider implements IDataProvider {
 
     /** Get absolute number of modelled residues in each chain */
     async authChainCoverages(pdbId: string): Promise<{ [chainId: string]: number }> {
-        const url = `${this.apiBaseUrl}/pdb/entry/polymer_coverage/${pdbId}`;
-        const json = await this.get(url);
-        const coverages: { [chainId: string]: number } = {};
-        for (const entity of json[pdbId]?.molecules ?? []) {
+        const json = await this.get<PolymerCoverageApiData>(`pdb/entry/polymer_coverage/${pdbId}`);
+        const coverages: { [authAsymId: string]: number } = {};
+        for (const entity of json?.[pdbId]?.molecules ?? []) {
             for (const chain of entity.chains ?? []) {
-                // const chainId = chain.struct_asym_id;
-                const chainId = chain.chain_id;
-                coverages[chainId] ??= 0;
+                const authAsymId = chain.chain_id;
+                coverages[authAsymId] ??= 0;
                 for (const range of chain.observed ?? []) {
                     const length = range.end.residue_number - range.start.residue_number + 1;
-                    coverages[chainId] += length;
+                    coverages[authAsymId] += length;
                 }
             }
         }
@@ -194,10 +204,9 @@ export class ApiDataProvider implements IDataProvider {
 
     /** Get list of experimental methods for a PDB entry. */
     async experimentalMethods(pdbId: string): Promise<string[]> {
-        const url = `${this.apiBaseUrl}/pdb/entry/summary/${pdbId}`;
-        const json = await this.get(url);
+        const json = await this.get<SummaryApiData>(`pdb/entry/summary/${pdbId}`);
         const methods: string[] = [];
-        for (const record of json[pdbId] ?? []) {
+        for (const record of json?.[pdbId] ?? []) {
             for (const method of record.experimental_method ?? []) {
                 methods.push(method);
             }
@@ -206,24 +215,20 @@ export class ApiDataProvider implements IDataProvider {
     }
 
     /** Get PDBe Structure Quality Report */
-    async pdbeStructureQualityReport(pdbId: string): Promise<PdbeStructureQualityReport | undefined> {
-        const url = `${this.apiBaseUrl}/validation/residuewise_outlier_summary/entry/${pdbId}`;
-        const json = await this.get(url);
-        const data = json[pdbId] as PdbeStructureQualityReport;
-        return data;
+    async pdbeStructureQualityReport(pdbId: string) {
+        const json = await this.get<ValidationApiData>(`validation/residuewise_outlier_summary/entry/${pdbId}`);
+        return json?.[pdbId];
     }
 
     async atomInteractions(pdbId: string, authAsymId: string, authSeqId: number) {
-        const url = `${this.apiBaseUrl}/pdb/bound_ligand_interactions/${pdbId}/${authAsymId}/${authSeqId}?preserve_case=true`;
-        const json: InteractionsApiData = await this.get(url);
-        return json[pdbId] ?? [];
+        const json = await this.get<InteractionsApiData>(`pdb/bound_ligand_interactions/${pdbId}/${authAsymId}/${authSeqId}?preserve_case=true`);
+        return json?.[pdbId] ?? [];
     }
 
     async llmAnnotations(pdbId: string) {
-        const url = `${this.apiBaseUrl}/pdb/entry/llm_annotations/summary/${pdbId}`;
-        const json: LlmSummaryApiData = await this.get(url);
+        const json = await this.get<LlmSummaryApiData>(`pdb/entry/llm_annotations/summary/${pdbId}`);
         const out: LlmAnnotations = {};
-        for (const provider of json[pdbId]?.data ?? []) {
+        for (const provider of json?.[pdbId]?.data ?? []) {
             for (const residue of provider.residueList) {
                 for (const annot of residue.additionalData) {
                     const entityId = annot.entityId
@@ -235,33 +240,12 @@ export class ApiDataProvider implements IDataProvider {
             }
         }
         return out;
-        // return json[pdbId] ?? [];
     }
-}
-
-type PdbeStructureQualityReport = {
-    molecules: {
-        entity_id: number,
-        chains: {
-            chain_id: string,
-            struct_asym_id: string,
-            models: {
-                model_id: number,
-                residues: {
-                    residue_number: number,
-                    author_residue_number: number | string, // this hurts but yes, sometimes it's a string (e.g. 8eiu entity 6 chain F [auth A])
-                    author_insertion_code: string,
-                    alt_code: string,
-                    outlier_types: string[],
-                }[],
-            }[],
-        }[],
-    }[],
 }
 
 
 /** Helper function to convert a domain mapping (describes one domain) from PDBeAPI format to a `DomainRecord`. */
-function extractDomainMappings(mappings: any[], source: string, family: string, familyName: string): DomainRecord[] {
+function extractDomainMappings(mappings: MappingsApiData[string][string][string]['mappings'], source: string, family: string, familyName: string): DomainRecord[] {
     const result: { [domainId: string]: DomainRecord } = {};
     const domainCount: { [chain: string]: number } = {};
     function getAdHocDomainId(chain: string) {
@@ -313,7 +297,6 @@ export function sortDomainsByEntity(domains: { [source: string]: { [family: stri
 }
 
 
-
 /** Represents one assembly of a PDB entry. */
 export interface AssemblyRecord {
     /** Assembly ID, usually '1', '2' etc. */
@@ -358,7 +341,7 @@ export interface DomainRecord {
 }
 
 /** Represents one contiguous residue range forming a domain */
-interface DomainChunkRecord {
+export interface DomainChunkRecord {
     /** label_entity_id */
     entityId: string,
     /** label_asym_id */
@@ -374,9 +357,224 @@ interface DomainChunkRecord {
     segment: number,
 }
 
-export interface AssemblyApiData {
+/** Response of `pdb/entry/summary/${pdbId}` */
+export interface SummaryApiData {
+    [pdbId: string]: Array<{
+        /** PDB entry title, e.g. "Crystal Structures of Nipah Virus G Attachment Glycoprotein" */
+        title: string,
+        /** e.g. "RCSB" */
+        processing_site: string,
+        /** e.g. "RCSB" */
+        deposition_site: string,
+        /** e.g. "20080502" */
+        deposition_date: string,
+        /** e.g. "20080502" */
+        release_date: string,
+        /** e.g. "20080502" */
+        revision_date: string,
+        /** e.g. ["x-ray"] */
+        experimental_method_class: string[],
+        /** e.g. ["X-ray diffraction"] */
+        experimental_method: string[],
+        split_entry: any[],
+        related_structures: any[],
+        entry_authors: string[],
+        number_of_entities: {
+            water: number,
+            polypeptide: number,
+            dna: number,
+            rna: number,
+            sugar: number,
+            ligand: number,
+            'dna/rna': number,
+            other: number,
+            carbohydrate_polymer: number,
+            peptide_nucleic_acid: number,
+            cyclic_pseudo_peptide: number,
+        },
+        assemblies: Array<{
+            /** e.g. "1" */
+            assembly_id: string,
+            /** e.g. "tetramer" */
+            name: string,
+            /** e.g. "hetero" */
+            form: string,
+            preferred: boolean,
+        }>,
+    }>,
+}
+
+/** Response of `pdb/entry/molecules/${pdbId}` */
+export interface MoleculesApiData {
+    [pdbId: string]: Array<{
+        /** e.g. "polypeptide(L)" */
+        molecule_type: string,
+        entity_id: number,
+        sample_preparation: string,
+        length: number,
+        number_of_copies: number,
+        /** Occurrence in chains by auth_asym_id */
+        in_chains: string[],
+        /** Occurrence in chains by label_asym_id */
+        in_struct_asyms: string[],
+        mutation_flag: any,
+        /** Molecular weight in Da */
+        weight: number,
+        ca_p_only: boolean,
+        /** Entity name as stated in mmCIF file */
+        synonym?: string,
+        /** Entity names mapped from UniProt etc. */
+        molecule_name: string[],
+        gene_name?: string[],
+        /** Source organism */
+        source?: Array<any>,
+        sequence?: string,
+        pdb_sequence?: string,
+        pdb_sequence_indices_with_multiple_residues?: any,
+        /** CCD codes (for ligands etc.) */
+        chem_comp_ids?: string[],
+    }>,
+}
+
+/** Response of `pdb/entry/ligand_monomers/${pdbId}` */
+export interface LigandMonomersApiData {
+    [pdbId: string]: Array<{
+        /** auth_asym_id */
+        chain_id: string,
+        author_residue_number: number,
+        author_insertion_code: string,
+        chem_comp_id: string,
+        alternate_conformers: number,
+        entity_id: number,
+        /** label_asym_id */
+        struct_asym_id: "B",
+        residue_number: number,
+        /** e.g. "RETINOIC ACID" */
+        chem_comp_name: string,
+        /** Molecular weight in Da */
+        weight: string,
+        carbohydrate_polymer: boolean,
+        branch_name: string,
+        /** e.g. "bm1" */
+        bm_id: string,
+        annotations: any[],
+    }>,
+}
+
+/** Response of `pdb/entry/modified_AA_or_NA/${pdbId}` */
+export interface ModifiedResiduesApiData {
+    [pdbId: string]: Array<{
+        /** auth_asym_id */
+        chain_id: string,
+        author_residue_number: number,
+        author_insertion_code: string,
+        chem_comp_id: string,
+        alternate_conformers: number,
+        entity_id: number,
+        /** label_asym_id */
+        struct_asym_id: string,
+        residue_number: number,
+        /** e.g. "(3-AMINO-2,5-DIOXO-1-PYRROLIDINYL)ACETIC ACID" */
+        chem_comp_name: string,
+        /** e.g. "ENDOTHIAPEPSIN" */
+        description: string,
+        /** Molecular weight of the whole chain perhaps, in Da */
+        weight: number,
+    }>
+}
+
+/** Response of `mappings/${pdbId}`, `nucleic_mappings/${pdbId}`.
+ * This is not exhaustive, records from different source databases contain different fields. */
+export interface MappingsApiData {
     [pdbId: string]: {
-        entities: {
+        [source: string]: {
+            [familyId: string]: {
+                name: string,
+                identifier: string,
+                mappings: Array<{
+                    entity_id: number,
+                    /** auth_asym_id */
+                    chain_id: string,
+                    /** label_asym_id */
+                    struct_asym_id: string,
+                    unp_start?: number,
+                    unp_end?: number,
+                    start: {
+                        author_residue_number: number,
+                        author_insertion_code: string,
+                        residue_number: number,
+                    },
+                    end: {
+                        author_residue_number: number,
+                        author_insertion_code: string,
+                        residue_number: number,
+                    },
+                    /** For CATH records, e.g. "1hdaA00" */
+                    domain?: string,
+                    /** For SCOP records, e.g. "d1hdaa_" */
+                    scop_id: string,
+                }>,
+            },
+        },
+    },
+}
+
+/** Response of `pdb/entry/polymer_coverage/${pdbId}` */
+export interface PolymerCoverageApiData {
+    [pdbId: string]: {
+        "molecules": Array<{
+            "entity_id": number,
+            "chains": Array<{
+                /** label_asym_id */
+                "struct_asym_id": string,
+                /** auth_asym_id */
+                "chain_id": string,
+                "observed": Array<{
+                    "start": {
+                        "residue_number": number,
+                        "author_residue_number": number,
+                        "author_insertion_code": string | null,
+                        "struct_asym_id": string,
+                    },
+                    "end": {
+                        "residue_number": number,
+                        "author_residue_number": number,
+                        "author_insertion_code": string | null,
+                        "struct_asym_id": string,
+                    }
+                }>,
+            }>
+        }>,
+    },
+}
+
+/** Response of `validation/residuewise_outlier_summary/entry/${pdbId}` */
+export interface ValidationApiData {
+    [pdbId: string]: {
+        molecules: Array<{
+            entity_id: number,
+            chains: Array<{
+                chain_id: string,
+                struct_asym_id: string,
+                models: Array<{
+                    model_id: number,
+                    residues: Array<{
+                        residue_number: number,
+                        author_residue_number: number | string, // this hurts but yes, sometimes it's a string (e.g. 8eiu entity 6 chain F [auth A])
+                        author_insertion_code: string,
+                        alt_code: string,
+                        outlier_types: string[],
+                    }>,
+                }>,
+            }>,
+        }>,
+    },
+}
+
+/** Response of `pdb/entry/assembly/${pdbId}` */
+export interface AssemblyApiData {
+    [pdbId: string]: Array<{
+        entities: Array<{
             entity_id: number,
             /** label_asym_ids with instanceID suffixes (except for the first instance), e.g. ["A", "B-2"] */
             in_chains: string[],
@@ -384,19 +582,19 @@ export interface AssemblyApiData {
             molecule_type: string,
             number_of_copies: number,
             molecule_name: string[],
-        }[],
+        }>,
         assembly_id: string,
         assembly_composition: string,
         molecular_weight: number,
         polymeric_count: number,
         /** e.g. "software_defined_assembly", "author_and_software_defined_assembly" */
         details: string,
-    }[],
+    }>,
 }
 
 export interface InteractionsApiData {
-    [pdbId: string]: {
-        interactions: {
+    [pdbId: string]: Array<{
+        interactions: Array<{
             end: {
                 /** e.g. 'CZ' */
                 atom_names: string[],
@@ -413,7 +611,7 @@ export interface InteractionsApiData {
             interaction_type: string,
             /** e.g. 'C11' */
             ligand_atoms: string[],
-        }[],
+        }>,
         ligand: {
             author_insertion_code?: string,
             author_residue_number: number,
@@ -421,7 +619,7 @@ export interface InteractionsApiData {
             chain_id: string,
             chem_comp_id: string,
         },
-    }[],
+    }>,
 }
 
 export interface LlmAnnotationItem {
@@ -450,15 +648,15 @@ export interface LlmAnnotationItem {
 interface LlmSummaryApiData {
     [pdbId: string]: {
         dataType: string,
-        data: {
+        data: Array<{
             provider: string,
-            residueList: {
+            residueList: Array<{
                 startIndex: number,
                 endIndex: number,
                 indexType: 'PDB' | 'UNIPROT',
                 additionalData: LlmAnnotationItem[],
-            }[],
-        }[],
+            }>,
+        }>,
     },
 }
 
