@@ -192,7 +192,7 @@ function getMVSSnapshotProviders(config?: Partial<MVSSnapshotProviderConfig>) {
     const pdbeApiClient = new PdbeApiClient(fullConfig.PdbApiUrlPrefix);
     const dataProvider = new ApiDataProvider(pdbeApiClient);
     const modelProvider = new MolstarModelProvider();
-    const snapshotProvider = new MVSSnapshotProvider(dataProvider, modelProvider, fullConfig);
+    const snapshotProvider = new MVSSnapshotProvider(Molstar.PluginExtensions.mvs.MVSData, dataProvider, modelProvider, fullConfig);
     const snapshotListProvider = new MVSSnapshotListProvider(dataProvider, modelProvider);
     return { snapshotProvider, snapshotListProvider };
 }

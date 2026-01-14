@@ -1,4 +1,4 @@
-import { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
+import type { MVSData } from 'molstar/lib/extensions/mvs/mvs-data';
 import type { MVSAnimationNodeParams } from 'molstar/lib/extensions/mvs/tree/animation/animation-tree';
 import type * as Builder from 'molstar/lib/extensions/mvs/tree/mvs/mvs-builder';
 import type { ComponentExpressionT } from 'molstar/lib/extensions/mvs/tree/mvs/param-types';
@@ -50,6 +50,8 @@ export const INTERACTION_NICE_NAMES: Record<string, string> = {
 
 export class MVSSnapshotProvider {
     constructor(
+        /** MVSData library object (from molstar/lib/extensions/mvs/mvs-data) */
+        public readonly MVSDataLib: typeof MVSData,
         public readonly dataProvider: IDataProvider,
         public readonly modelProvider: IModelProvider,
         public readonly config: MVSSnapshotProviderConfig,
@@ -62,7 +64,7 @@ export class MVSSnapshotProvider {
         description.push(`- **View kind:** ${spec.kind}`);
         description.push(`- **View params:** ${JSON.stringify(spec.params, undefined, 1)}`);
         const snapshot = ctx.root.getSnapshot({ title: spec.name, description: description.join('\n\n'), linger_duration_ms: 10_000, transition_duration_ms: 500 });
-        return MVSData.createMultistate([snapshot], { title: spec.name, description: description.join('\n\n') });
+        return this.MVSDataLib.createMultistate([snapshot], { title: spec.name, description: description.join('\n\n') });
     }
 
     private async loadSnapshotSpec(spec: SnapshotSpec) {
@@ -92,7 +94,7 @@ export class MVSSnapshotProvider {
 
     private _loadRoot(): { root: Builder.Root } {
         return {
-            root: MVSData.createBuilder(),
+            root: this.MVSDataLib.createBuilder(),
         };
     }
 
